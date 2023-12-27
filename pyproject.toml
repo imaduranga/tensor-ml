@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "tensor-ml"
+version = "0.1.0"
+description = "A library that provides a rich set of tools for tensor analysis, multi-linear algebra, tensor regression and multi-dimensional sparse signal representations."
+authors = ["Ishan Wickramasingha"]
+license = "Apache License 2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
