@@ -3,12 +3,14 @@ name = "tensor-ml"
 version = "0.1.0"
 description = "A library that provides a rich set of tools for tensor analysis, multi-linear algebra, tensor regression and multi-dimensional sparse signal representations."
 authors = ["Ishan Wickramasingha"]
-license = "Apache License 2.0"
+license = "MIT"
 readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-
+numpy = "^1.21.0"
+torch = "^1.9.0"
+pytest = "^8.3.4"
 
 [build-system]
 requires = ["poetry-core"]
