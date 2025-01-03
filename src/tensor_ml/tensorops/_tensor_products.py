@@ -18,6 +18,9 @@ def kronecker_product(factor_matrices: List[Union[np.ndarray, torch.Tensor]]) ->
     :return: Kronecker product of all factor matrices.
     """
 
+    if not factor_matrices:
+        raise ValueError("The list of factor_matrices is empty.")
+
     # Compute the Kronecker product using the appropriate method
     if isinstance(factor_matrices[0], torch.Tensor):
         return _kronecker_product_torch(factor_matrices)
@@ -32,6 +35,9 @@ def khatri_rao_product(matrices: List[Union[np.ndarray, torch.Tensor]]) -> Union
     :param matrices: List of matrices (torch.Tensor or numpy.ndarray).
     :return: Khatri-Rao product of all matrices (torch.Tensor or np.ndarray).
     """
+
+    if not matrices:
+        raise ValueError("The list of matrices is empty.")
 
     if isinstance(matrices[0], torch.Tensor):
         matrices = [torch.tensor(matrix) if not isinstance(matrix, torch.Tensor) else matrix for matrix in matrices]
@@ -49,6 +55,9 @@ def tensor_product(matrices: List[Union[np.ndarray, torch.Tensor]]) -> Union[np.
     :return: Tensor product of all matrices (torch.Tensor or np.ndarray).
     """
 
+    if not matrices:
+        raise ValueError("The list of matrices is empty.")
+
     if isinstance(matrices[0], torch.Tensor):
         matrices = [torch.tensor(matrix) if not isinstance(matrix, torch.Tensor) else matrix for matrix in matrices]
         return _tensor_product_torch(matrices)
@@ -64,6 +73,10 @@ def hadamard_product(tensors: List[Union[np.ndarray, torch.Tensor]]) -> Union[np
     :param tensors: List of tensors (torch.Tensor or numpy.ndarray).
     :return: Hadamard product of all tensors in the list (torch.Tensor or np.ndarray).
     """
+
+    if not tensors:
+        raise ValueError("The list of tensors is empty.")
+
     if isinstance(tensors[0], torch.Tensor):
         tensors = [torch.tensor(tensor) if not isinstance(tensor, torch.Tensor) else tensor for tensor in tensors]
     else:

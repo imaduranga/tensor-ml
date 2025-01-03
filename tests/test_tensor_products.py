@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from tensor_ml.tensorops._tensor_products import kronecker_product, khatri_rao_product, hadamard_product
+from tensor_ml.tensorops._tensor_products import kronecker_product, khatri_rao_product, hadamard_product, tensor_product
 
 
 class TestTensorProducts:
@@ -11,6 +11,7 @@ class TestTensorProducts:
             np.array([[7, 8, 9], [10, 11, 12]]),
             np.array([[13, 14, 15], [16, 17, 18]])
         ]
+        self.factor_matrices_torch = [torch.tensor(matrix, dtype=torch.double) for matrix in self.factor_matrices_np]
 
     def test_kronecker_product(self):
         # Test with NumPy
@@ -21,16 +22,20 @@ class TestTensorProducts:
         assert np.allclose(result_np[:, 0],
                            expected_column_0_np), "NumPy: Column 0 values do not match the expected values"
 
-        # Convert factor matrices to Torch
-        factor_matrices_torch = [torch.tensor(matrix, dtype=torch.double) for matrix in self.factor_matrices_np]
-
         # Test with Torch
-        result_torch = kronecker_product(factor_matrices_torch)
+        result_torch = kronecker_product(self.factor_matrices_torch)
         assert isinstance(result_torch, torch.Tensor)
         assert result_torch.shape == (8, 27)
         expected_column_0_torch = torch.tensor([91, 364, 130, 520, 112, 448, 160, 640], dtype=torch.double)
         assert torch.allclose(result_torch[:, 0],
                               expected_column_0_torch), "Torch: Column 0 values do not match the expected values"
+
+        # Test with an empty list
+        matrices_empty = []
+        try:
+            kronecker_product(matrices_empty)
+        except ValueError as e:
+            assert str(e) == "The list of factor_matrices is empty."
 
     def test_khatri_rao_product(self):
         # Test with NumPy
@@ -41,16 +46,60 @@ class TestTensorProducts:
         assert np.allclose(result_np[:, 0],
                            expected_column_0_np), "NumPy: Column 0 values do not match the expected values"
 
-        # Convert factor matrices to Torch
-        factor_matrices_torch = [torch.tensor(matrix, dtype=torch.double) for matrix in self.factor_matrices_np]
-
         # Test with Torch
-        result_torch = khatri_rao_product(factor_matrices_torch)
+        result_torch = khatri_rao_product(self.factor_matrices_torch)
         assert isinstance(result_torch, torch.Tensor)
         assert result_torch.shape == (8, 3)
         expected_column_0_torch = torch.tensor([91, 364, 130, 520, 112, 448, 160, 640], dtype=torch.double)
         assert torch.allclose(result_torch[:, 0],
                               expected_column_0_torch), "Torch: Column 0 values do not match the expected values"
+
+        # Test with an empty list
+        matrices_empty = []
+        try:
+            khatri_rao_product(matrices_empty)
+        except ValueError as e:
+            assert str(e) == "The list of matrices is empty."
+
+
+    def test_tensor_product(self):
+        # Test with NumPy arrays
+        result_np = tensor_product(self.factor_matrices_np)
+        expected_shape_np = (2, 3, 2, 3, 2, 3)
+        assert result_np.shape == expected_shape_np, f"Expected shape {expected_shape_np}, but got {result_np.shape}"
+        assert isinstance(result_np, np.ndarray), f"Expected result type np.ndarray, but got {type(result_np)}"
+
+        # Test with PyTorch tensors
+        result_torch = tensor_product(self.factor_matrices_torch)
+        expected_shape_torch = (2, 3, 2, 3, 2, 3)
+        assert result_torch.shape == expected_shape_torch, f"Expected shape {expected_shape_torch}, but got {result_torch.shape}"
+        assert isinstance(result_torch,
+                          torch.Tensor), f"Expected result type torch.Tensor, but got {type(result_torch)}"
+
+        # Test with mixed NumPy and PyTorch tensors
+        matrices_mixed = [
+            self.factor_matrices_np[0],
+            self.factor_matrices_torch[1],
+            self.factor_matrices_np[2]
+        ]
+        result_mixed = tensor_product(matrices_mixed)
+        expected_shape_mixed = (2, 3, 2, 3, 2, 3)
+        assert result_mixed.shape == expected_shape_mixed, f"Expected shape {expected_shape_mixed}, but got {result_mixed.shape}"
+        assert isinstance(result_mixed, np.ndarray), f"Expected result type np.ndarray, but got {type(result_mixed)}"
+
+        # Test with a single matrix
+        matrix_single = self.factor_matrices_np[0]
+        result_single = tensor_product([matrix_single])
+        expected_shape_single = (2, 3)
+        assert result_single.shape == expected_shape_single, f"Expected shape {expected_shape_single}, but got {result_single.shape}"
+        assert np.array_equal(result_single, matrix_single), "The result should be the same as the input matrix"
+
+        # Test with an empty list
+        matrices_empty = []
+        try:
+            tensor_product(matrices_empty)
+        except ValueError as e:
+            assert str(e) == "The list of matrices is empty."
 
 
 def test_hadamard_product():
@@ -83,3 +132,10 @@ def test_hadamard_product():
     result_mixed = hadamard_product(tensors_mixed)
     expected_result_mixed = np.array([[45, 120], [231, 384]])
     assert np.array_equal(result_mixed, expected_result_mixed), f"Expected {expected_result_mixed}, but got {result_mixed}"
+
+    # Test with an empty list
+    matrices_empty = []
+    try:
+        hadamard_product(matrices_empty)
+    except ValueError as e:
+        assert str(e) == "The list of tensors is empty."
