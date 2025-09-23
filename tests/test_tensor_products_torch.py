@@ -109,11 +109,11 @@ class TestTensorProductsTorch:
         assert np.allclose(tpt._vectorize(result), expected_result), f"Expected {expected_result}, but got {result}"
 
     def test_kronecker_matrix_vector_product(self):
-        x = tpt._vectorize(self.X)
+        x = torch.tensor([3, 5, 7], dtype=torch.double)
         tensor_shape = [3, 3, 3]
         active_columns = [0, 1, 2]
-        active_indices = [0, 1, 2]
+        active_indices = [0, 0, 1]
         result = tpt._kronecker_matrix_vector_product(self.factor_matrices, x, tensor_shape, active_columns, active_indices,
                                                       use_transpose=False)
-        expected_result = np.array([45, 55, 99, 121, 153, 187, 207, 253])
+        expected_result = np.array([910, 2275, 1300, 3250, 1120, 2800, 1600, 4000])
         assert np.allclose(result, expected_result), f"Expected {expected_result}, but got {result}"

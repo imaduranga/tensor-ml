@@ -114,13 +114,15 @@ def _full_multilinear_product(X: torch.Tensor, factor_matrices: list, use_transp
     return Y
 
 
-def _kronecker_matrix_vector_product(factor_matrices: List[torch.Tensor],
-                                    x: torch.Tensor,
-                                    tensor_shape: List[int],
-                                    active_columns: List[int],
-                                    active_indices: List[int] = None,
-                                    use_transpose: bool = False,
-                                    device: torch.device = torch.device("cpu")) -> torch.Tensor:
+def _kronecker_matrix_vector_product(
+    factor_matrices: List[torch.Tensor],
+    x: torch.Tensor,
+    tensor_shape: List[int],
+    active_columns: List[int],
+    active_indices: List[int] = None,
+    use_transpose: bool = False,
+    device: torch.device = torch.device("cpu")
+) -> torch.Tensor:
     """
     kronecker_matrix_vector_product function calculates the product
     between a matrix A and a vector x (y = Ax) using full multilinear product.
@@ -138,17 +140,27 @@ def _kronecker_matrix_vector_product(factor_matrices: List[torch.Tensor],
     :return: y : Result vector of the Kronecker matrix vector product.
     """
 
-    X: torch.Tensor = torch.zeros(np.prod(tensor_shape), dtype=torch.double, device=device)
+    X = torch.zeros(np.prod(tensor_shape), dtype=torch.double, device=device)
     X[active_columns] = x
     X = X.reshape(tensor_shape)
 
     if use_transpose:
-        factor_matrices = [factor_matrices[i][active_indices[-i - 1], :] for i in range(len(factor_matrices))]
+        factor_matrices = [
+            torch.as_tensor(factor_matrices[i][active_indices[-i - 1], :].reshape(1, -1))
+            if isinstance(active_indices[-i - 1], int)
+            else torch.as_tensor(factor_matrices[i][active_indices[-i - 1], :])
+            for i in range(len(factor_matrices))
+        ]
     else:
-        factor_matrices = [factor_matrices[i][:, active_indices[-i - 1]] for i in range(len(factor_matrices))]
+        factor_matrices = [
+            torch.as_tensor(factor_matrices[i][:, active_indices[-i - 1]].reshape(-1, 1))
+            if isinstance(active_indices[-i - 1], int)
+            else torch.as_tensor(factor_matrices[i][:, active_indices[-i - 1]])
+            for i in range(len(factor_matrices))
+        ]
 
-    # for i in range(len(factor_matrices)):
-    #     X = torch.index_select(X, i, torch.tensor(active_indices[i], device=device))
+    for i in range(len(factor_matrices)):
+        X = torch.index_select(X, i, torch.tensor(active_indices[i], device=device))
 
     Y: torch.Tensor = _full_multilinear_product(X, factor_matrices, use_transpose)
     y: torch.Tensor = Y.flatten()

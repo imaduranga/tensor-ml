@@ -113,42 +113,56 @@ def _full_multilinear_product(X: np.ndarray, factor_matrices: list, use_transpos
     return Y
 
 
-def _kronecker_matrix_vector_product(factor_matrices: List[np.ndarray],
-                                    x: np.ndarray,
-                                    tensor_shape: List[int],
-                                    active_columns: List[int],
-                                    active_indices: List[int],
-                                    use_transpose: bool = False) -> np.ndarray:
+def _kronecker_matrix_vector_product(
+    factor_matrices: List[np.ndarray],
+    x: np.ndarray,
+    tensor_shape: List[int],
+    active_columns: List[int],
+    active_indices: List[int],
+    use_transpose: bool = False
+) -> np.ndarray:
     """
-    kronecker_matrix_vector_product function calculates the product
-    between a matrix A and a vector x (y = Ax) using full multilinear product.
-    Columns of matrix A can be obtained by kronecker product of respective columns in the kron_cell_array.
-    If matrix B is the kronecker product of all factor matrices in Factor_Matrices, columns of A is a subset of columns of B.
-    If transpose = True, y = A'x is calculated
+    Calculates the product between a Kronecker matrix A and a vector x (y = Ax) using full multilinear product.
+    Columns of matrix A are obtained by Kronecker product of respective columns in the factor matrices.
+    If matrix B is the Kronecker product of all factor matrices, columns of A are a subset of columns of B.
+    If use_transpose is True, computes y = A'x.
 
     :param factor_matrices: List of factor matrices as numpy arrays.
-    :param x: The vector that is going to be multiplied with the Kronecker matrix.
+    :param x: The vector to be multiplied with the Kronecker matrix.
     :param tensor_shape: Shape of the core tensor X.
-    :param active_columns: Active indices of the factor matrices to be used in the multiplications.
+    :param active_columns: Indices of the active columns in the Kronecker matrix.
     :param active_indices: List of tensor columns (column indices of x as a core tensor X) to be used in the multiplication.
-    :param use_transpose: If True transpose each factor matrix before calculating the multilinear product.
-    :return: y : Result vector of the Kronecker matrix vector product.
+    :param use_transpose: If True, transpose each factor matrix before calculating the multilinear product.
+    :return: y: Result vector of the Kronecker matrix vector product.
     """
 
-    X: np.ndarray = np.zeros(np.prod(tensor_shape))
+    X = np.zeros(np.prod(tensor_shape), dtype=np.double)
     X[active_columns] = x
     X = X.reshape(tensor_shape)
 
     if use_transpose:
-        factor_matrices = [factor_matrices[i][active_indices[-i - 1], :] for i in range(len(factor_matrices))]
+        factor_matrices = [
+            factor_matrices[i][active_indices[-i - 1], :].reshape(1, -1)
+            if isinstance(active_indices[-i - 1], int)
+            else factor_matrices[i][active_indices[-i - 1], :]
+            for i in range(len(factor_matrices))
+        ]
     else:
-        factor_matrices = [factor_matrices[i][:, active_indices[-i - 1]] for i in range(len(factor_matrices))]
+        factor_matrices = [
+            factor_matrices[i][:, active_indices[-i - 1]].reshape(-1, 1)
+            if isinstance(active_indices[-i - 1], int)
+            else factor_matrices[i][:, active_indices[-i - 1]]
+            for i in range(len(factor_matrices))
+        ]
 
     for i in range(len(factor_matrices)):
-        X = np.take(X, active_indices[i], axis=i)
+        idx = active_indices[i]
+        if isinstance(idx, int):
+            idx = [idx]
+        X = np.take(X, idx, axis=i)
 
-    Y: np.ndarray = _full_multilinear_product(X, factor_matrices, use_transpose)
-    y: np.ndarray = Y.flatten()
+    Y = _full_multilinear_product(X, factor_matrices, use_transpose)
+    y = Y.flatten()
     return y
 
 
