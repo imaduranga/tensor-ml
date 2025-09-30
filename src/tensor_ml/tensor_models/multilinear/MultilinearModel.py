@@ -48,7 +48,7 @@ class MultilinearModel(BaseTensorModel):
         """
         Converts input to the appropriate type based on backend.
         - If backend is numpy, converts pandas DataFrame to np.ndarray.
-        - If backend is torch, converts pandas DataFrame or np.ndarray to torch.Tensor and moves to the specified device (default: keep on current device if torch.Tensor, else 'cuda' if available, else 'cpu').
+        - If backend is torch, converts pandas DataFrame or np.ndarray to torch.Tensor and moves to the specified device (default: 'cpu' or 'cuda' if available).
         - If backend is pandas, returns as is.
         :param X: Input data (np.ndarray, torch.Tensor, or pd.DataFrame)
         :param device: Device for torch.Tensor ('cpu', 'cuda', or torch.device), only used if backend is torch.
@@ -63,31 +63,26 @@ class MultilinearModel(BaseTensorModel):
             if isinstance(X, torch.Tensor):
                 return X.cpu().numpy()
         elif backend == BackendType.TORCH:
-            # Device selection
-            import logging
-            logger = logging.getLogger(__name__)
-            if isinstance(X, torch.Tensor):
-                # If device is None, keep on current device
-                if device is None:
-                    target_device = X.device
-                else:
-                    target_device = torch.device(device)
-                    if target_device.type == 'cuda' and not torch.cuda.is_available():
-                        logger.warning("Requested CUDA device, but CUDA is not available. Falling back to CPU.")
-                        target_device = torch.device('cpu')
-                return X.to(target_device)
-            # If not a tensor, select device as before
             if device is None:
-                target_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                if isinstance(X, torch.Tensor) and X.is_cuda:
+                    requested_device = X.device
+                else:
+                    requested_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             else:
-                target_device = torch.device(device)
-                if target_device.type == 'cuda' and not torch.cuda.is_available():
-                    logger.warning("Requested CUDA device, but CUDA is not available. Falling back to CPU.")
-                    target_device = torch.device('cpu')
+                requested_device = torch.device(device)
+
+            if requested_device.type == 'cuda' and not torch.cuda.is_available():
+                logger.warning("Requested CUDA device, but CUDA is not available. Falling back to CPU.")
+                requested_device = torch.device('cpu')
+
+            device = requested_device
+
+            if isinstance(X, torch.Tensor):
+                return X.to(device)
             if isinstance(X, np.ndarray):
-                return torch.from_numpy(X).to(target_device)
+                return torch.from_numpy(X).to(device)
             if isinstance(X, pd.DataFrame):
-                return torch.from_numpy(X.values).to(target_device)
+                return torch.from_numpy(X.values).to(device)
         elif backend == BackendType.PANDAS:
             if isinstance(X, pd.DataFrame):
                 return X
