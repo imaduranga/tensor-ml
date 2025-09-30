@@ -1,131 +1,140 @@
 import torch
 import numpy as np
-from typing import List, Union
-
+from typing import List, Union, Optional
+from tensor_ml.enums import BackendType
+from tensor_ml.utils import infer_backend
 import tensor_ml.tensorops._tensor_products_numpy as npt
 import tensor_ml.tensorops._tensor_products_torch as tpt
 
 
-def kronecker_product(factor_matrices: List[Union[np.ndarray, torch.Tensor]]) -> Union[np.ndarray, torch.Tensor]:
+def kronecker_product(factor_matrices: List[Union[np.ndarray, torch.Tensor]], backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Compute the Kronecker product of a list of factor matrices from N to 1.
     A = (A^(N) ⊗ A^(N−1) ⊗· · ·⊗A^(2) ⊗ A^(1) )
 
     :param factor_matrices: List of factor matrices as numpy array or torch tensor.
+    :param backend: BackendType (optional, inferred if not provided)
     :return: Kronecker product of all factor matrices.
     """
 
     if not factor_matrices:
         raise ValueError("The list of factor_matrices is empty.")
-
-    # Compute the Kronecker product using the appropriate method
-    if isinstance(factor_matrices[0], torch.Tensor):
-        return tpt._kronecker_product(factor_matrices)
+    backend = infer_backend(factor_matrices, backend)
+    if backend == BackendType.TORCH:
+        return tpt._kronecker_product([torch.as_tensor(m) for m in factor_matrices])
+    elif backend == BackendType.NUMPY:
+        return npt._kronecker_product([np.asarray(m) for m in factor_matrices])
     else:
-        return npt._kronecker_product(factor_matrices)
+        raise ValueError(f"Unsupported backend: {backend}")
 
 
-def khatri_rao_product(matrices: List[Union[np.ndarray, torch.Tensor]]) -> Union[np.ndarray, torch.Tensor]:
+def khatri_rao_product(matrices: List[Union[np.ndarray, torch.Tensor]], backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Compute the Khatri-Rao product of a list of matrices from N to 1.
 
     :param matrices: List of matrices (torch.Tensor or numpy.ndarray).
+    :param backend: BackendType (optional, inferred if not provided)
     :return: Khatri-Rao product of all matrices (torch.Tensor or np.ndarray).
     """
 
     if not matrices:
         raise ValueError("The list of matrices is empty.")
-
-    if isinstance(matrices[0], torch.Tensor):
-        matrices = [torch.tensor(matrix) if not isinstance(matrix, torch.Tensor) else matrix for matrix in matrices]
-        return tpt._khatri_rao_product(matrices)
+    backend = infer_backend(matrices, backend)
+    if backend == BackendType.TORCH:
+        return tpt._khatri_rao_product([torch.as_tensor(m) for m in matrices])
+    elif backend == BackendType.NUMPY:
+        return npt._khatri_rao_product([np.asarray(m) for m in matrices])
     else:
-        matrices = [np.array(matrix) if not isinstance(matrix, np.ndarray) else matrix for matrix in matrices]
-        return npt._khatri_rao_product(matrices)
+        raise ValueError(f"Unsupported backend: {backend}")
 
 
-def tensor_product(matrices: List[Union[np.ndarray, torch.Tensor]]) -> Union[np.ndarray, torch.Tensor]:
+def tensor_product(matrices: List[Union[np.ndarray, torch.Tensor]], backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Compute the tensor product of a list of matrices from N to 1.
 
     :param matrices: List of matrices (torch.Tensor or numpy.ndarray).
+    :param backend: BackendType (optional, inferred if not provided)
     :return: Tensor product of all matrices (torch.Tensor or np.ndarray).
     """
 
     if not matrices:
         raise ValueError("The list of matrices is empty.")
-
-    if isinstance(matrices[0], torch.Tensor):
-        matrices = [torch.tensor(matrix) if not isinstance(matrix, torch.Tensor) else matrix for matrix in matrices]
-        return tpt._tensor_product(matrices)
+    backend = infer_backend(matrices, backend)
+    if backend == BackendType.TORCH:
+        return tpt._tensor_product([torch.as_tensor(m) for m in matrices])
+    elif backend == BackendType.NUMPY:
+        return npt._tensor_product([np.asarray(m) for m in matrices])
     else:
-        matrices = [np.array(matrix) if not isinstance(matrix, np.ndarray) else matrix for matrix in matrices]
-        return npt._tensor_product(matrices)
+        raise ValueError(f"Unsupported backend: {backend}")
 
 
-def hadamard_product(tensors: List[Union[np.ndarray, torch.Tensor]]) -> Union[np.ndarray, torch.Tensor]:
+def hadamard_product(tensors: List[Union[np.ndarray, torch.Tensor]], backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Compute the Hadamard product of a list of tensors.
 
     :param tensors: List of tensors (torch.Tensor or numpy.ndarray).
+    :param backend: BackendType (optional, inferred if not provided)
     :return: Hadamard product of all tensors in the list (torch.Tensor or np.ndarray).
     """
 
     if not tensors:
         raise ValueError("The list of tensors is empty.")
-
-    if isinstance(tensors[0], torch.Tensor):
-        tensors = [torch.tensor(tensor) if not isinstance(tensor, torch.Tensor) else tensor for tensor in tensors]
+    backend = infer_backend(tensors, backend)
+    if backend == BackendType.TORCH:
+        tensors = [torch.as_tensor(t) for t in tensors]
+    elif backend == BackendType.NUMPY:
+        tensors = [np.asarray(t) for t in tensors]
     else:
-        tensors = [np.array(tensor) if not isinstance(tensor, np.ndarray) else tensor for tensor in tensors]
-
+        raise ValueError(f"Unsupported backend: {backend}")
     result = tensors[0]
     for tensor in tensors[1:]:
         result = result * tensor
     return result
 
 
-def get_kronecker_matrix_column(factor_matrices: List[Union[np.ndarray, torch.Tensor]], column_indices: List[int]) -> Union[np.ndarray, torch.Tensor]:
+def get_kronecker_matrix_column(factor_matrices: List[Union[np.ndarray, torch.Tensor]], column_indices: List[int], backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     This function returns a column of the Kronecker matrix (Kronecker Product of the Factor Matrices) when the
     factor matrices and column indices of each factor matrix is given.
-
     :param factor_matrices: List of factor matrices as numpy array or torch tensor.
-    :param column_indices: This field requires a list of column indices of factor matrix columns to be used in calculating the
-                    column of the Kronecker matrix.
+    :param column_indices: List of column indices of factor matrix columns to be used in calculating the
+                          column of the Kronecker matrix.
+    :param backend: BackendType (optional, inferred if not provided)
     :return: kronecker_column : This is the column of the Kronecker matrix corresponding to the column indices
     """
-
     if not factor_matrices:
         raise ValueError("The list of factor_matrices is empty.")
     if not column_indices:
         raise ValueError("The list of column_indices is empty.")
-
-    if isinstance(factor_matrices[0], torch.Tensor):
-        return tpt._get_kronecker_matrix_column(factor_matrices, column_indices)
+    backend = infer_backend(factor_matrices, backend)
+    if backend == BackendType.TORCH:
+        return tpt._get_kronecker_matrix_column([torch.as_tensor(m) for m in factor_matrices], column_indices)
+    elif backend == BackendType.NUMPY:
+        return npt._get_kronecker_matrix_column([np.asarray(m) for m in factor_matrices], column_indices)
     else:
-        return npt._get_kronecker_matrix_column(factor_matrices, column_indices)
+        raise ValueError(f"Unsupported backend: {backend}")
 
 
-def full_multilinear_product(X: Union[np.ndarray, torch.Tensor], factor_matrices: list, use_transpose: bool = False) -> Union[np.ndarray, torch.Tensor]:
+def full_multilinear_product(X: Union[np.ndarray, torch.Tensor], factor_matrices: list, use_transpose: bool = False, backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Full multilinear product of the tensor X with factor matrices.
     If use_transpose is set to True, then use the transpose of each factor matrix when calculating the
     full multilinear product.
-
     :param X: Core Tensor as an N-D Array or torch.Tensor.
     :param factor_matrices: List of factor matrices as numpy arrays or torch tensors.
     :param use_transpose: If True transpose each factor matrix before calculating the multilinear product.
+    :param backend: BackendType (optional, inferred if not provided)
     :return: Y  Resultant tensor of the full multilinear product of the tensor X with factor matrices
     """
-
     if X is None:
         raise ValueError("The input tensor X is empty or None.")
-
-    if isinstance(X, torch.Tensor):
-        return tpt._full_multilinear_product(X, factor_matrices, use_transpose)
+    backend = infer_backend(X, backend)
+    if backend == BackendType.TORCH:
+        return tpt._full_multilinear_product(torch.as_tensor(X), [torch.as_tensor(m) for m in factor_matrices], use_transpose)
+    elif backend == BackendType.NUMPY:
+        return npt._full_multilinear_product(np.asarray(X), [np.asarray(m) for m in factor_matrices], use_transpose)
     else:
-        return npt._full_multilinear_product(X, factor_matrices, use_transpose)
+        raise ValueError(f"Unsupported backend: {backend}")
 
 
 def kronecker_matrix_vector_product(factor_matrices: List[Union[np.ndarray, torch.Tensor]],
@@ -134,14 +143,14 @@ def kronecker_matrix_vector_product(factor_matrices: List[Union[np.ndarray, torc
                                     active_columns: List[int],
                                     active_indices: List[int],
                                     use_transpose: bool = False,
-                                    device: torch.device = torch.device("cpu")) -> Union[np.ndarray, torch.Tensor]:
+                                    device: torch.device = torch.device("cpu"),
+                                    backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     kronecker_matrix_vector_product function calculates the product
     between a matrix A and a vector x (y = Ax) using full multilinear product.
     Columns of matrix A can be obtained by kronecker product of respective columns in the factor_matrices.
     If matrix B is the kronecker product of all factor matrices in Factor_Matrices, columns of A is a subset of columns of B.
     If transpose = True, y = A'x is calculated
-
     :param factor_matrices: List of factor matrices as numpy arrays or torch tensors.
     :param x: The vector that is going to be multiplied with the Kronecker matrix.
     :param tensor_shape: Shape of the core tensor X.
@@ -149,112 +158,99 @@ def kronecker_matrix_vector_product(factor_matrices: List[Union[np.ndarray, torc
     :param active_indices: List of tensor columns (column indices of x as a core tensor X) to be used in the multiplication.
     :param use_transpose: If True transpose each factor matrix before calculating the multilinear product.
     :param device: The device "CPU" or "GPU" to be used in the calculations.
+    :param backend: BackendType (optional, inferred if not provided)
     :return: y : Result vector of the Kronecker matrix vector product.
     """
-
-    if isinstance(x, torch.Tensor):
-        return tpt._kronecker_matrix_vector_product(factor_matrices, x, tensor_shape, active_columns, active_indices, use_transpose, device)
+    backend = infer_backend(x, backend)
+    if backend == BackendType.TORCH:
+        return tpt._kronecker_matrix_vector_product([torch.as_tensor(m) for m in factor_matrices], torch.as_tensor(x), tensor_shape, active_columns, active_indices, use_transpose, device)
+    elif backend == BackendType.NUMPY:
+        return npt._kronecker_matrix_vector_product([np.asarray(m) for m in factor_matrices], np.asarray(x), tensor_shape, active_columns, active_indices, use_transpose)
     else:
-        return npt._kronecker_matrix_vector_product(factor_matrices, x, tensor_shape, active_columns, active_indices, use_transpose)
+        raise ValueError(f"Unsupported backend: {backend}")
 
 
 def tensorize(x: Union[np.ndarray, torch.Tensor],
               tensor_shape: List[int],
               active_elements: List[int],
-              device: torch.device = torch.device("cpu")) -> Union[np.ndarray, torch.Tensor]:
+              device: torch.device = torch.device("cpu"),
+              backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Tensorize a vector based on active elements.
-
     :param x: The vector with tensor elements.
     :param tensor_shape: Shape of the core tensor X.
     :param active_elements: Active elements of the Tensor X corresponds to elements of x.
     :param device: The device "CPU" or "GPU" to be used in the calculations.
+    :param backend: BackendType (optional, inferred if not provided)
     :return: Return the tensor X
     """
     if x is None:
         raise ValueError("The input vector x is None.")
-
-    if isinstance(x, torch.Tensor):
-        return tpt._tensorize(x, tensor_shape, active_elements, device)
+    backend = infer_backend(x, backend)
+    if backend == BackendType.TORCH:
+        return tpt._tensorize(torch.as_tensor(x), tensor_shape, active_elements, device)
+    elif backend == BackendType.NUMPY:
+        return npt._tensorize(np.asarray(x), tensor_shape, active_elements)
     else:
-        return npt._tensorize(x, tensor_shape, active_elements)
+        raise ValueError(f"Unsupported backend: {backend}")
 
 
-def vectorize(X: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
+def vectorize(X: Union[np.ndarray, torch.Tensor], backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Vectorize a tensor from dimension N to 1.
-
     :param X: The tensor to be vectorized.
+    :param backend: BackendType (optional, inferred if not provided)
     :return: Return the vector x
     """
-    return X.flatten()
-
-
-def get_reverse_shape(tensor_shape):
-    """
-    Calculate the reversed shape of the tensor(tensor shapes are reversed).
-    :param tensor_shape:
-    :return: Return the reversed shape of the tensor.
-    """
-    reverse_shape = list(tensor_shape)
-    reverse_shape.reverse()
-    return reverse_shape
-
-
-def get_vector_index(order, tensor_indices, tensor_shape):
-    """
-    Get vector index of a tensor element.
-
-    :param order: Order of the tensor
-    :param tensor_indices: Tensor indices
-    :param tensor_shape: Shape of the tensor
-    :return: Vector index of the tensor element.
-    """
-    vector_index = tensor_indices[0]
-    m = 1
-    for i in range(1, order):
-        m = m * tensor_shape[i - 1]
-        vector_index = vector_index + (tensor_shape[i] - 1) * m
-
-    return vector_index
+    backend = infer_backend(X, backend)
+    if backend == BackendType.TORCH:
+        return torch.as_tensor(X).flatten()
+    elif backend == BackendType.NUMPY:
+        return np.asarray(X).flatten()
+    else:
+        raise ValueError(f"Unsupported backend: {backend}")
 
 
 def get_gramian(G: List[Union[np.ndarray, torch.Tensor]],
                 active_columns: List[int],
                 tensor_shape: List[int],
-                device: Union[torch.device, str] = 'cpu') -> Union[np.ndarray, torch.Tensor]:
+                device: Union[torch.device, str] = 'cpu',
+                backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Obtain a Gram matrix by selecting a subset of columns from a kronecker matrix given by kronecker product of
     matrices in the Kron_Cell_Array.
-
     :param G: List of factor matrices as numpy arrays or torch tensors.
     :param active_columns: Active indices of the columns.
     :param tensor_shape: Shape of the tensor.
     :param device: The device "CPU" or "GPU" to be used in the calculations (only applicable for torch).
+    :param backend: BackendType (optional, inferred if not provided)
     :return: The Gramian Matrix.
     """
-
     if G is None:
         raise ValueError("The input list G is None.")
-
-    if isinstance(G[0], torch.Tensor):
-        return tpt._get_gramian(G, active_columns, tensor_shape, device)
+    backend = infer_backend(G, backend)
+    if backend == BackendType.TORCH:
+        return tpt._get_gramian([torch.as_tensor(m) for m in G], active_columns, tensor_shape, device)
+    elif backend == BackendType.NUMPY:
+        return npt._get_gramian([np.asarray(m) for m in G], active_columns, tensor_shape)
     else:
-        return npt._get_gramian(G, active_columns, tensor_shape)
+        raise ValueError(f"Unsupported backend: {backend}")
 
 
-def tround(tensor: Union[np.ndarray, torch.Tensor], precision_order: int = 0) -> Union[np.ndarray, torch.Tensor]:
+def tround(tensor: Union[np.ndarray, torch.Tensor], precision_order: int = 0, backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Round tensor elements to a specific precision.
-
     :param tensor: Tensor to be rounded.
     :param precision_order: Required precision.
+    :param backend: BackendType (optional, inferred if not provided)
     :return: Rounded tensor.
     """
     if tensor is None:
         raise ValueError("The input tensor is None.")
-
-    if isinstance(tensor, torch.Tensor):
-        return tpt._tround(tensor, precision_order)
+    backend = infer_backend(tensor, backend)
+    if backend == BackendType.TORCH:
+        return tpt._tround(torch.as_tensor(tensor), precision_order)
+    elif backend == BackendType.NUMPY:
+        return npt._tround(np.asarray(tensor), precision_order)
     else:
-        return npt._tround(tensor, precision_order)
+        raise ValueError(f"Unsupported backend: {backend}")
