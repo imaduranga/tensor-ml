@@ -1,0 +1,190 @@
+from typing import Optional, Any, Union
+import numpy as np
+from tensor_ml.tensor_models.base import BaseTensorModel
+from tensor_ml.enums import BackendType
+from tensor_ml.utils import infer_backend
+from tensor_ml.tensorops.tensor_ops import TensorOpsFactory
+import logging
+
+logger = logging.getLogger(__name__)
+
+class MultilinearModel(BaseTensorModel):
+    """
+    Base class for multilinear tensor models. Inherit from this class for specific multilinear algorithms
+    (e.g., TLARS, TNET, Kronecker OMP, etc.). Handles backend detection and input normalization.
+    """
+    def __init__(self, backend: Optional[Union[str, BackendType]] = None, device: Optional[Union[str, Any]] = 'cuda'):
+        """
+        Initialize the MultilinearModel.
+
+        Parameters
+        ----------
+        backend : Optional[Union[str, BackendType]], default=BackendType.NUMPY
+            Backend to use (NUMPY, TORCH, or PANDAS). If None, will be inferred from data.
+        device : Optional[Union[str, torch.device]], default='cuda'
+            Device for torch tensors ('cuda', 'cpu', 'spu', or torch.device). Defaults to 'cuda'. If not available, will use 'cpu'.
+        """
+        super().__init__()
+
+        if backend is None:
+            self.backend = BackendType.NUMPY
+        elif isinstance(backend, BackendType):
+            self.backend = backend
+        else:
+            self.backend = BackendType(str(backend))
+
+        self.device = None
+        if self.backend == BackendType.TORCH:
+            try:
+                import torch
+                dev = str(device) if device is not None else 'cuda'
+                if dev == 'cuda' and not torch.cuda.is_available():
+                    dev = 'cpu'
+                self.device = torch.device(dev)
+            except ImportError:
+                raise ImportError("PyTorch is required for TORCH backend but is not installed.")
+        elif self.backend == BackendType.PANDAS:
+            try:
+                import pandas as pd
+            except ImportError:
+                raise ImportError("Pandas is required for PANDAS backend but is not installed.")
+
+        self.ops = TensorOpsFactory.get(self.backend, self.device)
+
+    def get_backend(self, X: Any = None) -> BackendType:
+        """
+        Returns the backend as a BackendType. If not set, infers from X and sets self.backend.
+        :param X: Optional input to infer backend if not set.
+        :return: BackendType (NUMPY, TORCH, or PANDAS)
+        """
+        if self.backend is not None:
+            return self.backend
+        if X is not None:
+            # Use shared infer_backend for numpy/torch, else handle pandas
+            try:
+                self.backend = infer_backend(X)
+            except ValueError:
+                # Only import pandas if needed
+                try:
+                    import pandas as pd
+                except ImportError:
+                    raise ImportError("Pandas is required for PANDAS backend but is not installed.")
+                if isinstance(X, pd.DataFrame):
+                    self.backend = BackendType.PANDAS
+                else:
+                    raise ValueError("Input X must be a numpy.ndarray, torch.Tensor, or pandas.DataFrame")
+            return self.backend
+        raise ValueError("Backend is not set and cannot be inferred without input X.")
+
+    def normalize_input(self, X: Any) -> Any:
+        """
+        Converts input to the appropriate type based on backend.
+        - If backend is numpy, converts pandas DataFrame to np.ndarray.
+        - If backend is torch, converts pandas DataFrame or np.ndarray to torch.Tensor and moves to the device set in __init__.
+        - If backend is pandas, returns as is.
+        :param X: Input data (np.ndarray, torch.Tensor, or pd.DataFrame)
+        :return: Normalized input
+        """
+        backend = self.get_backend(X)
+        if backend == BackendType.NUMPY:
+            # Only import pandas if needed
+            try:
+                import pandas as pd
+            except ImportError:
+                pd = None
+            if pd is not None and isinstance(X, pd.DataFrame):
+                return X.values
+            if isinstance(X, np.ndarray):
+                return X
+            # Only import torch if needed
+            if 'torch' in globals() and isinstance(X, torch.Tensor):
+                return X.cpu().numpy()
+        elif backend == BackendType.TORCH:
+            import torch
+            if isinstance(X, torch.Tensor):
+                return X.to(self.device)
+            if isinstance(X, np.ndarray):
+                return torch.from_numpy(X).to(self.device)
+            # Only import pandas if needed
+            try:
+                import pandas as pd
+            except ImportError:
+                pd = None
+            if pd is not None and isinstance(X, pd.DataFrame):
+                return torch.from_numpy(X.values).to(self.device)
+        elif backend == BackendType.PANDAS:
+            try:
+                import pandas as pd
+            except ImportError:
+                raise ImportError("Pandas is required for PANDAS backend but is not installed.")
+            if isinstance(X, pd.DataFrame):
+                return X
+            if isinstance(X, np.ndarray):
+                return pd.DataFrame(X)
+            # Only import torch if needed
+            if 'torch' in globals() and isinstance(X, torch.Tensor):
+                return pd.DataFrame(X.cpu().numpy())
+        raise ValueError("Unsupported input type for normalization.")
+
+    def fit(self, X: Any, y: Any = None, **kwargs: Any) -> 'MultilinearModel':
+        """
+        Fit the multilinear model to data. Must be implemented by subclasses.
+        Handles backend detection and input normalization.
+        :param X: np.ndarray, torch.Tensor, or pandas.DataFrame
+        :param y: np.ndarray, torch.Tensor, or pandas.DataFrame, optional
+        :return: self
+        """
+        raise NotImplementedError("fit method must be implemented by subclass.")
+
+    def predict(self, X: Any, **kwargs: Any) -> Any:
+        """
+        Predict using the multilinear model. Must be implemented by subclasses.
+        :param X: np.ndarray, torch.Tensor, or pandas.DataFrame
+        :return: predictions as np.ndarray, torch.Tensor, or pandas.DataFrame
+        """
+        raise NotImplementedError("predict method must be implemented by subclass.")
+
+    def score(
+        self,
+        factor_matrices,
+        Y_true,
+    ) -> float:
+        """
+        Returns the coefficient of determination R^2 of the prediction.
+        """
+        Y_pred = self.predict(factor_matrices)
+        Y_true_flat = self.ops.flatten(self.normalize_input(Y_true))
+        Y_pred_flat = self.ops.flatten(Y_pred)
+        u = self.ops.sum((Y_true_flat - Y_pred_flat) ** 2)
+        v = self.ops.sum((Y_true_flat - self.ops.mean(Y_true_flat)) ** 2)
+        if v == 0:
+            return 0.0
+        return float(1 - u / v)
+
+    def mse(
+        self,
+        factor_matrices,
+        Y_true,
+    ) -> float:
+        """
+        Returns the mean squared error (MSE) of the prediction.
+        """
+        Y_pred = self.predict(factor_matrices)
+        Y_true_flat = self.ops.flatten(self.normalize_input(Y_true))
+        Y_pred_flat = self.ops.flatten(Y_pred)
+        mse = self.ops.mean((Y_true_flat - Y_pred_flat) ** 2)
+        return float(mse)
+
+    def mae(
+        self,
+        factor_matrices,
+        Y_true,
+    ) -> float:
+        """
+        Returns the mean absolute error (MAE) of the prediction.
+        """
+        Y_pred = self.predict(factor_matrices)
+        Y_true_flat = self.ops.flatten(self.normalize_input(Y_true))
+        Y_pred_flat = self.ops.flatten(Y_pred)
+        mae = self.ops.mean(self.ops.abs(Y_true_flat - Y_pred_flat))
+        return float(mae)

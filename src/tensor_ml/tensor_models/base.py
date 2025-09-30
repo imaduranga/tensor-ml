@@ -1,7 +1,5 @@
-import numpy as np
-import torch
-import pandas as pd
 from typing import Optional, Any, Union
+import numpy as np
 
 class BaseTensorModel:
     """Generic base class for tensor-based machine learning models supporting NumPy, PyTorch, and pandas DataFrame."""
@@ -9,7 +7,7 @@ class BaseTensorModel:
     def __init__(self):
         pass
 
-    def fit(self, X: Union[np.ndarray, torch.Tensor, pd.DataFrame], y: Optional[Union[np.ndarray, torch.Tensor, pd.DataFrame]] = None, **kwargs: Any) -> 'BaseTensorModel':
+    def fit(self, X: Any, y: Optional[Any] = None, **kwargs: Any) -> 'BaseTensorModel':
         """
         Fit the model to data.
 
@@ -19,7 +17,7 @@ class BaseTensorModel:
         """
         raise NotImplementedError("fit method must be implemented by subclass.")
 
-    def predict(self, X: Union[np.ndarray, torch.Tensor, pd.DataFrame], **kwargs: Any) -> Union[np.ndarray, torch.Tensor, pd.DataFrame]:
+    def predict(self, X: Any, **kwargs: Any) -> Any:
         """
         Predict using the model.
 
@@ -28,7 +26,7 @@ class BaseTensorModel:
         """
         raise NotImplementedError("predict method must be implemented by subclass.")
 
-    def score(self, X: Union[np.ndarray, torch.Tensor, pd.DataFrame], y: Optional[Union[np.ndarray, torch.Tensor, pd.DataFrame]] = None, **kwargs: Any) -> float:
+    def score(self, X: Any, y: Optional[Any] = None, **kwargs: Any) -> float:
         """
         Return a score for predictions (e.g., accuracy, R^2, etc.).
 
