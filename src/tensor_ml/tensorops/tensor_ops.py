@@ -26,7 +26,7 @@ class TensorOps:
     def asarray(self, x):
         return np.asarray(x)
     def flatten(self, x):
-        return x.flatten()
+        return x.flatten(order='F')
     def to_device(self, x, device=None):
         return x
     def nonzero(self, x):
@@ -80,7 +80,9 @@ class TorchOps(TensorOps):
     def asarray(self, x):
         return self.torch.as_tensor(x, device=self.device)
     def flatten(self, x):
-        return x.flatten()
+        if x.ndim <= 1:
+            return x.contiguous().flatten()
+        return x.permute(*reversed(range(x.ndim))).contiguous().flatten()
     def to_device(self, x, device=None):
         return x.to(self.device)
     def nonzero(self, x):

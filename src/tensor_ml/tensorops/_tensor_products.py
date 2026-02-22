@@ -141,7 +141,7 @@ def kronecker_matrix_vector_product(factor_matrices: List[Union[np.ndarray, torc
                                     x: Union[np.ndarray, torch.Tensor],
                                     tensor_shape: List[int],
                                     active_columns: List[int],
-                                    active_indices: List[int],
+                                    active_indices: List = None,
                                     use_transpose: bool = False,
                                     device: torch.device = torch.device("cpu"),
                                     backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
@@ -198,15 +198,16 @@ def tensorize(x: Union[np.ndarray, torch.Tensor],
 def vectorize(X: Union[np.ndarray, torch.Tensor], backend: Optional[BackendType] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Vectorize a tensor from dimension N to 1.
+    Uses Fortran (column-major) order to match the mathematical convention vec(X).
     :param X: The tensor to be vectorized.
     :param backend: BackendType (optional, inferred if not provided)
     :return: Return the vector x
     """
     backend = infer_backend(X, backend)
     if backend == BackendType.TORCH:
-        return torch.as_tensor(X).flatten()
+        return tpt._vectorize(torch.as_tensor(X))
     elif backend == BackendType.NUMPY:
-        return np.asarray(X).flatten()
+        return npt._vectorize(np.asarray(X))
     else:
         raise ValueError(f"Unsupported backend: {backend}")
 
@@ -233,6 +234,83 @@ def get_gramian(G: List[Union[np.ndarray, torch.Tensor]],
         return tpt._get_gramian([torch.as_tensor(m) for m in G], active_columns, tensor_shape, device)
     elif backend == BackendType.NUMPY:
         return npt._get_gramian([np.asarray(m) for m in G], active_columns, tensor_shape)
+    else:
+        raise ValueError(f"Unsupported backend: {backend}")
+
+
+def tround(tensor, precision_order: int = 0, backend=None):
+    """
+    Round tensor elements to a specific precision.
+
+    :param tensor: Tensor or scalar to be rounded.
+    :param precision_order: Required precision order.
+    :param backend: BackendType (optional, inferred if not provided).
+    :return: Rounded tensor.
+    """
+    if isinstance(tensor, (int, float)):
+        tensor = np.array(tensor)
+    backend = infer_backend(tensor, backend)
+    if backend == BackendType.TORCH:
+        return tpt._tround(torch.as_tensor(tensor), precision_order)
+    elif backend == BackendType.NUMPY:
+        return npt._tround(np.asarray(tensor), precision_order)
+    else:
+        raise ValueError(f"Unsupported backend: {backend}")
+
+
+def get_vector_index(tensor_indices, tensor_shape):
+    """
+    Get the linear (Fortran-order) index from tensor subscript indices.
+
+    :param tensor_indices: Tuple of per-mode indices (0-based).
+    :param tensor_shape: Shape of the tensor.
+    :return: Linear index (0-based, Fortran order).
+    """
+    return int(np.ravel_multi_index(tensor_indices, tensor_shape, order='F'))
+
+
+def get_kronecker_factor_column_indices(column_index, tensor_shape):
+    """
+    Decompose a linear (Fortran-order) index into per-factor column indices.
+
+    :param column_index: Linear index (0-based, Fortran order).
+    :param tensor_shape: Shape of the core tensor.
+    :return: Tuple of per-factor column indices (0-based).
+    """
+    return np.unravel_index(column_index, tensor_shape, order='F')
+
+
+def get_direction_vector(GInv, zI, G, active_columns, add_column_flag,
+                        changed_dict_column_index, changed_active_column_index,
+                        tensor_shape, precision_order=10, device='cpu', backend=None):
+    """
+    Update the inverse Gramian using the Schur complement formula and compute
+    the direction vector dI = GInv @ zI.
+
+    :param GInv: Current inverse Gramian matrix.
+    :param zI: Sign vector of correlations at active columns.
+    :param G: List of per-mode Gram matrices.
+    :param active_columns: Current active column indices.
+    :param add_column_flag: True if a column was added, False if removed.
+    :param changed_dict_column_index: Linear index of the changed column.
+    :param changed_active_column_index: Position (0-indexed) of the changed column in active_columns.
+    :param tensor_shape: Shape of the core tensor.
+    :param precision_order: Precision order for rounding.
+    :param device: Device for torch computations.
+    :param backend: BackendType (optional, inferred from zI).
+    :return: (dI, GInv) - direction vector and updated inverse Gramian.
+    """
+    backend = infer_backend(zI, backend)
+    if backend == BackendType.TORCH:
+        return tpt._get_direction_vector(
+            GInv, zI, [torch.as_tensor(m) for m in G], active_columns,
+            add_column_flag, changed_dict_column_index, changed_active_column_index,
+            tensor_shape, precision_order, device)
+    elif backend == BackendType.NUMPY:
+        return npt._get_direction_vector(
+            GInv, zI, [np.asarray(m) for m in G], active_columns,
+            add_column_flag, changed_dict_column_index, changed_active_column_index,
+            tensor_shape, precision_order)
     else:
         raise ValueError(f"Unsupported backend: {backend}")
 

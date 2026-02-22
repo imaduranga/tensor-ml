@@ -1,0 +1,42 @@
+# Ignore JetBrains IDE project files
+.idea/
+*.iml
+# Other IDE/editor metadata
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# MATLAB files and folders
+# Ignore MATLAB source and data files
+*.m
+*.mat
+*.mlx
+*.fig
+*.mex*
+*.asv
+# Ignore matlab folders (e.g., src/tensor_ml/matlab/)
+/matlab/
+**/matlab/
+
+# Python build / cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# macOS
+.DS_Store
+
+# Virtual environments
+venv/
+env/
+.Python
+
+# Poetry / pipenv
+.poetry/
+
+# Misc
+coverage/
+*.log
+

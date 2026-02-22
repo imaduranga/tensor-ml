@@ -109,11 +109,29 @@ class TestTensorProductsTorch:
         assert np.allclose(tpt._vectorize(result), expected_result), f"Expected {expected_result}, but got {result}"
 
     def test_kronecker_matrix_vector_product(self):
-        x = torch.tensor([3, 5, 7], dtype=torch.double)
+        x = torch.tensor([3.0, 5.0, 7.0], dtype=torch.double)
         tensor_shape = [3, 3, 3]
         active_columns = [0, 1, 2]
-        active_indices = [0, 0, 1]
-        result = tpt._kronecker_matrix_vector_product(self.factor_matrices, x, tensor_shape, active_columns, active_indices,
-                                                      use_transpose=False)
-        expected_result = np.array([910, 2275, 1300, 3250, 1120, 2800, 1600, 4000])
-        assert np.allclose(result, expected_result), f"Expected {expected_result}, but got {result}"
+
+        # Without sub-tensor optimization (active_indices=None)
+        result = tpt._kronecker_matrix_vector_product(
+            self.factor_matrices, x, tensor_shape, active_columns,
+            active_indices=None, use_transpose=False)
+
+        # Verify against full kronecker product: y = B[:, active_cols] @ x
+        B = tpt._kronecker_product(self.factor_matrices).to(dtype=torch.double)
+        expected = B[:, active_columns] @ x
+        assert np.allclose(result.numpy(), expected.numpy()), f"Without sub-tensor: Expected {expected}, but got {result}"
+
+        # With sub-tensor optimization
+        all_factor_indices = [set() for _ in range(len(self.factor_matrices))]
+        for col in active_columns:
+            inds = np.unravel_index(col, tensor_shape, order='F')
+            for n in range(len(self.factor_matrices)):
+                all_factor_indices[n].add(inds[n])
+        active_indices = [sorted(s) for s in all_factor_indices]
+
+        result_sub = tpt._kronecker_matrix_vector_product(
+            self.factor_matrices, x, tensor_shape, active_columns,
+            active_indices=active_indices, use_transpose=False)
+        assert np.allclose(result_sub.numpy(), expected.numpy()), f"With sub-tensor: Expected {expected}, but got {result_sub}"

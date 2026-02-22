@@ -108,7 +108,7 @@ def _full_multilinear_product(X: np.ndarray, factor_matrices: list, use_transpos
             oper = "z" + letters[:order][n]
 
         op = letters[:order] + "," + oper + "->" + letters[:order][:n] + 'z' + letters[:order][n + 1:]
-        Y = np.einsum(op, Y, factor_matrices[-n - 1])
+        Y = np.einsum(op, Y, factor_matrices[n])
 
     return Y
 
@@ -118,7 +118,7 @@ def _kronecker_matrix_vector_product(
     x: np.ndarray,
     tensor_shape: List[int],
     active_columns: List[int],
-    active_indices: List[int],
+    active_indices: List = None,
     use_transpose: bool = False
 ) -> np.ndarray:
     """
@@ -127,42 +127,44 @@ def _kronecker_matrix_vector_product(
     If matrix B is the Kronecker product of all factor matrices, columns of A are a subset of columns of B.
     If use_transpose is True, computes y = A'x.
 
+    Uses Fortran (column-major) order for vectorization/tensorization to match the mathematical convention.
+
     :param factor_matrices: List of factor matrices as numpy arrays.
     :param x: The vector to be multiplied with the Kronecker matrix.
     :param tensor_shape: Shape of the core tensor X.
-    :param active_columns: Indices of the active columns in the Kronecker matrix.
-    :param active_indices: List of tensor columns (column indices of x as a core tensor X) to be used in the multiplication.
+    :param active_columns: Indices of the active columns in the Kronecker matrix (Fortran-order linear indices).
+    :param active_indices: List of per-factor active column indices for sub-tensor optimization.
+                          If None, uses full factor matrices (no sub-tensor optimization).
     :param use_transpose: If True, transpose each factor matrix before calculating the multilinear product.
     :return: y: Result vector of the Kronecker matrix vector product.
     """
 
     X = np.zeros(np.prod(tensor_shape), dtype=np.double)
     X[active_columns] = x
-    X = X.reshape(tensor_shape)
+    X = X.reshape(tensor_shape, order='F')
 
-    if use_transpose:
-        factor_matrices = [
-            factor_matrices[i][active_indices[-i - 1], :].reshape(1, -1)
-            if isinstance(active_indices[-i - 1], int)
-            else factor_matrices[i][active_indices[-i - 1], :]
-            for i in range(len(factor_matrices))
-        ]
-    else:
-        factor_matrices = [
-            factor_matrices[i][:, active_indices[-i - 1]].reshape(-1, 1)
-            if isinstance(active_indices[-i - 1], int)
-            else factor_matrices[i][:, active_indices[-i - 1]]
-            for i in range(len(factor_matrices))
-        ]
+    sub_tensor = active_indices is not None and len(factor_matrices) > 1
 
-    for i in range(len(factor_matrices)):
-        idx = active_indices[i]
-        if isinstance(idx, int):
-            idx = [idx]
-        X = np.take(X, idx, axis=i)
+    if sub_tensor:
+        sub_factors = []
+        idx_arrays = []
+        for i in range(len(factor_matrices)):
+            idx = active_indices[i]
+            if isinstance(idx, (int, np.integer)):
+                idx = np.array([idx])
+            else:
+                idx = np.asarray(idx)
+            idx_arrays.append(idx)
+
+            if use_transpose:
+                sub_factors.append(factor_matrices[i][idx, :])
+            else:
+                sub_factors.append(factor_matrices[i][:, idx])
+        factor_matrices = sub_factors
+        X = X[np.ix_(*idx_arrays)]
 
     Y = _full_multilinear_product(X, factor_matrices, use_transpose)
-    y = Y.flatten()
+    y = Y.flatten(order='F')
     return y
 
 
@@ -180,18 +182,19 @@ def _tensorize(x: np.ndarray,
 
     X = np.zeros(np.prod(tensor_shape), dtype=np.double)
     X[active_elements] = x
-    X = X.reshape(tensor_shape)
+    X = X.reshape(tensor_shape, order='F')
     return X
 
 
 def _vectorize(X: np.ndarray) -> np.ndarray:
     """
     Vectorize a tensor from dimension N to 1.
+    Uses Fortran (column-major) order to match the mathematical convention vec(X).
 
     :param X: The tensor to be vectorized.
     :return: Return the vector x
     """
-    return X.flatten()
+    return X.flatten(order='F')
 
 
 def _get_gramian(G: List[np.ndarray],
@@ -210,7 +213,7 @@ def _get_gramian(G: List[np.ndarray],
     GI = np.zeros((len(active_columns), len(active_columns)), dtype=np.double)
 
     for i in range(len(active_columns)):
-        indices = np.unravel_index(active_columns[i], tensor_shape)
+        indices = np.unravel_index(active_columns[i], tensor_shape, order='F')
         gk = _get_kronecker_matrix_column(G, indices)
         gk = gk[active_columns]
         GI[:, i] = gk
@@ -229,3 +232,69 @@ def _tround(tensor: np.ndarray, precision_order: int = 0) -> np.ndarray:
     if not isinstance(tensor, np.ndarray):
         tensor = np.array(tensor)
     return np.round(tensor * 10 ** precision_order) * 10 ** -precision_order
+
+
+def _get_direction_vector(GInv: np.ndarray, zI: np.ndarray, gramians: List[np.ndarray],
+                         active_columns: np.ndarray, add_column_flag: bool,
+                         changed_dict_column_index: int, changed_active_column_index: int,
+                         tensor_shape: List[int], precision_order: int) -> tuple:
+    """
+    Update the inverse Gramian GInv using the Schur complement formula for
+    column addition or removal, and compute the direction vector dI = GInv @ zI.
+
+    Simplified single-matrix version of the MATLAB getDirectionVector function.
+
+    :param GInv: Current inverse Gramian matrix (2D numpy array).
+    :param zI: Sign vector of correlations at active columns.
+    :param gramians: List of per-mode Gram matrices (G_n = D_n' @ D_n).
+    :param active_columns: Current active column indices.
+    :param add_column_flag: True if a column was added, False if removed.
+    :param changed_dict_column_index: Linear index of the changed dictionary column.
+    :param changed_active_column_index: Position (0-indexed) of the changed column in active_columns.
+    :param tensor_shape: Shape of the core tensor.
+    :param precision_order: Precision order for rounding.
+    :return: (dI, GInv) - direction vector and updated inverse Gramian.
+    """
+    N = len(active_columns)
+
+    if add_column_flag:
+        # Column addition: expand GInv from (N-1)x(N-1) to NxN via Schur complement
+        old_N = N - 1
+
+        indices = np.unravel_index(int(changed_dict_column_index), tensor_shape, order='F')
+        ga = _get_kronecker_matrix_column(gramians, indices).astype(np.float64)
+        ga = ga[active_columns]
+
+        b = np.zeros(N, dtype=np.float64)
+        b[-1] = 1.0
+
+        if old_N > 0:
+            b[:old_N] -= GInv[:old_N, :old_N] @ ga[:old_N]
+
+        schur_complement = ga[N - 1] + (np.dot(ga[:old_N], b[:old_N]) if old_N > 0 else 0.0)
+        alpha = 1.0 / schur_complement
+
+        new_GInv = np.zeros((N, N), dtype=np.float64)
+        if old_N > 0:
+            new_GInv[:old_N, :old_N] = GInv[:old_N, :old_N]
+        new_GInv += alpha * np.outer(b, b)
+        GInv = new_GInv
+    else:
+        # Column removal: shrink GInv from (N+1)x(N+1) to NxN via Schur complement
+        old_N = N + 1
+        k = int(changed_active_column_index)
+
+        alpha = GInv[k, k]
+        ab = GInv[:old_N, k].copy()
+
+        # Delete row k and column k
+        GInv = np.delete(np.delete(GInv[:old_N, :old_N], k, axis=0), k, axis=1)
+        ab = np.delete(ab, k)
+
+        # Schur complement update for removal
+        GInv -= (1.0 / alpha) * np.outer(ab, ab)
+
+    dI = GInv @ zI
+    dI = _tround(dI, precision_order)
+
+    return dI, GInv

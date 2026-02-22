@@ -5,6 +5,21 @@ import torch
 from string import ascii_lowercase as letters
 
 
+def _torch_flatten_fortran(x: torch.Tensor) -> torch.Tensor:
+    """Flatten a torch tensor in Fortran (column-major) order, matching MATLAB's X(:)."""
+    if x.ndim <= 1:
+        return x.contiguous().flatten()
+    return x.permute(*reversed(range(x.ndim))).contiguous().flatten()
+
+
+def _torch_reshape_fortran(x: torch.Tensor, shape) -> torch.Tensor:
+    """Reshape a 1D torch tensor to given shape in Fortran (column-major) order, matching MATLAB's reshape."""
+    shape = list(shape)
+    if len(shape) <= 1:
+        return x.reshape(*shape) if shape else x
+    return x.reshape(*reversed(shape)).permute(*reversed(range(len(shape)))).contiguous()
+
+
 def _kronecker_product(matrices: List[torch.Tensor]) -> torch.Tensor:
     """
     Compute the Kronecker product of a list of Torch tensors from N to 1.
@@ -109,7 +124,7 @@ def _full_multilinear_product(X: torch.Tensor, factor_matrices: list, use_transp
             oper = "z" + letters[:order][n]
 
         op = letters[:order] + "," + oper + "->" + letters[:order][:n] + 'z' + letters[:order][n + 1:]
-        Y = torch.einsum(op, Y, factor_matrices[-n - 1])
+        Y = torch.einsum(op, Y, factor_matrices[n])
 
     return Y
 
@@ -119,22 +134,24 @@ def _kronecker_matrix_vector_product(
     x: torch.Tensor,
     tensor_shape: List[int],
     active_columns: List[int],
-    active_indices: List[int] = None,
+    active_indices: List = None,
     use_transpose: bool = False,
     device: torch.device = torch.device("cpu")
 ) -> torch.Tensor:
     """
-    kronecker_matrix_vector_product function calculates the product
-    between a matrix A and a vector x (y = Ax) using full multilinear product.
-    Columns of matrix A can be obtained by kronecker product of respective columns in the kron_cell_array.
-    If matrix B is the kronecker product of all factor matrices in Factor_Matrices, columns of A is a subset of columns of B.
-    If transpose = True, y = A'x is calculated
+    Calculates the product between a Kronecker matrix A and a vector x (y = Ax) using full multilinear product.
+    Columns of matrix A are obtained by Kronecker product of respective columns in the factor matrices.
+    If matrix B is the Kronecker product of all factor matrices, columns of A are a subset of columns of B.
+    If use_transpose is True, computes y = A'x.
+
+    Uses Fortran (column-major) order for vectorization/tensorization to match the mathematical convention.
 
     :param factor_matrices: List of factor matrices as torch tensors.
     :param x: The vector that is going to be multiplied with the Kronecker matrix.
     :param tensor_shape: Shape of the core tensor X.
-    :param active_columns: Active indices of the factor matrices to be used in the multiplications.
-    :param active_indices: List of tensor columns (column indices of x as a core tensor X) to be used in the multiplication.
+    :param active_columns: Active indices of the factor matrices to be used in the multiplications (Fortran-order linear indices).
+    :param active_indices: List of per-factor active column indices for sub-tensor optimization.
+                          If None, uses full factor matrices (no sub-tensor optimization).
     :param use_transpose: If True transpose each factor matrix before calculating the multilinear product.
     :param device: The device "CPU" or "GPU" to be used in the calculations.
     :return: y : Result vector of the Kronecker matrix vector product.
@@ -142,28 +159,31 @@ def _kronecker_matrix_vector_product(
 
     X = torch.zeros(np.prod(tensor_shape), dtype=torch.double, device=device)
     X[active_columns] = x
-    X = X.reshape(tensor_shape)
+    X = _torch_reshape_fortran(X, tensor_shape)
 
-    if use_transpose:
-        factor_matrices = [
-            torch.as_tensor(factor_matrices[i][active_indices[-i - 1], :].reshape(1, -1))
-            if isinstance(active_indices[-i - 1], int)
-            else torch.as_tensor(factor_matrices[i][active_indices[-i - 1], :])
-            for i in range(len(factor_matrices))
-        ]
-    else:
-        factor_matrices = [
-            torch.as_tensor(factor_matrices[i][:, active_indices[-i - 1]].reshape(-1, 1))
-            if isinstance(active_indices[-i - 1], int)
-            else torch.as_tensor(factor_matrices[i][:, active_indices[-i - 1]])
-            for i in range(len(factor_matrices))
-        ]
+    # Ensure factor matrices are double precision to match X
+    factor_matrices = [fm.to(dtype=torch.double) for fm in factor_matrices]
 
-    for i in range(len(factor_matrices)):
-        X = torch.index_select(X, i, torch.tensor(active_indices[i], device=device))
+    sub_tensor = active_indices is not None and len(factor_matrices) > 1
+
+    if sub_tensor:
+        sub_factors = []
+        for i in range(len(factor_matrices)):
+            idx = active_indices[i]
+            if isinstance(idx, (int, np.integer)):
+                idx = [idx]
+            idx_tensor = torch.tensor(idx, device=device) if not isinstance(idx, torch.Tensor) else idx.to(device)
+
+            if use_transpose:
+                sub_factors.append(factor_matrices[i][idx_tensor, :])
+            else:
+                sub_factors.append(factor_matrices[i][:, idx_tensor])
+
+            X = torch.index_select(X, i, idx_tensor)
+        factor_matrices = sub_factors
 
     Y: torch.Tensor = _full_multilinear_product(X, factor_matrices, use_transpose)
-    y: torch.Tensor = Y.flatten()
+    y: torch.Tensor = _torch_flatten_fortran(Y)
     return y
 
 
@@ -183,18 +203,19 @@ def _tensorize(x: torch.Tensor,
 
     X = torch.zeros(np.prod(tensor_shape), dtype=torch.double, device=device)
     X[active_elements] = x
-    X = X.reshape(tensor_shape)
+    X = _torch_reshape_fortran(X, tensor_shape)
     return X
 
 
 def _vectorize(X: torch.Tensor) -> torch.Tensor:
     """
     Vectorize a tensor from dimension N to 1.
+    Uses Fortran (column-major) order to match the mathematical convention vec(X).
 
     :param X: The tensor to be vectorized.
     :return: Return the vector x
     """
-    return X.flatten()
+    return _torch_flatten_fortran(X)
 
 
 def _get_gramian(G: List[torch.Tensor],
@@ -215,7 +236,7 @@ def _get_gramian(G: List[torch.Tensor],
     GI = torch.zeros(len(active_columns), len(active_columns), dtype=torch.double, device=device)
 
     for i in range(len(active_columns)):
-        indices = np.unravel_index(active_columns[i].item(), tensor_shape)
+        indices = np.unravel_index(active_columns[i].item(), tensor_shape, order='F')
         gk = _get_kronecker_matrix_column(G, indices)
         gk = gk[active_columns]
         GI[:, i] = torch.tensor(gk, device=device)
@@ -232,3 +253,70 @@ def _tround(tensor: torch.Tensor, precision_order: int = 0) -> torch.Tensor:
     :return: Rounded tensor.
     """
     return torch.round(tensor * 10 ** precision_order) * 10 ** -precision_order
+
+
+def _get_direction_vector(GInv: torch.Tensor, zI: torch.Tensor, gramians: List[torch.Tensor],
+                         active_columns: torch.Tensor, add_column_flag: bool,
+                         changed_dict_column_index: int, changed_active_column_index: int,
+                         tensor_shape: List[int], precision_order: int,
+                         device: torch.device = torch.device("cpu")) -> tuple:
+    """
+    Torch implementation of get_direction_vector.
+    Update the inverse Gramian using the Schur complement formula and compute dI = GInv @ zI.
+
+    :param GInv: Current inverse Gramian matrix (2D torch tensor).
+    :param zI: Sign vector of correlations at active columns.
+    :param gramians: List of per-mode Gram matrices.
+    :param active_columns: Current active column indices.
+    :param add_column_flag: True if a column was added, False if removed.
+    :param changed_dict_column_index: Linear index of the changed dictionary column.
+    :param changed_active_column_index: Position (0-indexed) of the changed column in active_columns.
+    :param tensor_shape: Shape of the core tensor.
+    :param precision_order: Precision order for rounding.
+    :param device: Torch device.
+    :return: (dI, GInv) - direction vector and updated inverse Gramian.
+    """
+    N = len(active_columns)
+
+    if add_column_flag:
+        old_N = N - 1
+
+        indices = np.unravel_index(int(changed_dict_column_index), tensor_shape, order='F')
+        ga = _get_kronecker_matrix_column(gramians, indices)
+        ga = ga[active_columns].to(dtype=torch.float64, device=device)
+
+        b = torch.zeros(N, dtype=torch.float64, device=device)
+        b[-1] = 1.0
+
+        GInv = GInv.to(dtype=torch.float64)
+
+        if old_N > 0:
+            b[:old_N] -= GInv[:old_N, :old_N] @ ga[:old_N]
+
+        schur_complement = ga[N - 1] + (torch.dot(ga[:old_N], b[:old_N]) if old_N > 0 else 0.0)
+        alpha = 1.0 / schur_complement
+
+        new_GInv = torch.zeros((N, N), dtype=torch.float64, device=device)
+        if old_N > 0:
+            new_GInv[:old_N, :old_N] = GInv[:old_N, :old_N]
+        new_GInv += alpha * torch.outer(b, b)
+        GInv = new_GInv
+    else:
+        old_N = N + 1
+        k = int(changed_active_column_index)
+
+        alpha = GInv[k, k].clone()
+        ab = GInv[:old_N, k].clone()
+
+        keep = [i for i in range(old_N) if i != k]
+        keep_t = torch.tensor(keep, device=device)
+        GInv = GInv[keep_t][:, keep_t].clone()
+        ab = ab[keep_t].clone()
+
+        GInv -= (1.0 / alpha) * torch.outer(ab, ab)
+
+    zI = zI.to(dtype=GInv.dtype)
+    dI = GInv @ zI
+    dI = _tround(dI, precision_order)
+
+    return dI, GInv
