@@ -1,3 +1,5 @@
+"""Base multilinear tensor model with backend-agnostic ops."""
+
 from typing import Optional, Any, Union
 import numpy as np
 from tensor_ml.tensor_models.base import BaseTensorModel
@@ -5,6 +7,8 @@ from tensor_ml.enums import BackendType
 from tensor_ml.utils import infer_backend
 from tensor_ml.tensor_ops import TensorOpsFactory, TensorProductsFactory
 import logging
+
+__all__ = ["MultilinearModel"]
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +25,7 @@ class MultilinearModel(BaseTensorModel):
         Parameters
         ----------
         backend : Optional[Union[str, BackendType]], default=None
-            Backend to use (NUMPY, TORCH, or PANDAS). If None, will be inferred from data at fit time.
+            Backend to use (NUMPY or TORCH). If None, will be inferred from data at fit time.
         device : Optional[Union[str, Any]], default='cuda'
             Device for torch tensors ('cuda', 'cpu', or torch.device). Defaults to 'cuda'.
             If not available, will use 'cpu'. Ignored for non-torch backends.
@@ -40,7 +44,7 @@ class MultilinearModel(BaseTensorModel):
             self.ops = None
             self.tp = None
 
-    def _setup_ops(self):
+    def _setup_ops(self) -> None:
         """Create the ops and tensor-products instances for the current backend."""
         if self.backend == BackendType.TORCH:
             self.ops = TensorOpsFactory.get(self.backend, self._device_hint)
@@ -49,7 +53,7 @@ class MultilinearModel(BaseTensorModel):
             self.ops = TensorOpsFactory.get(self.backend)
             self.tp = TensorProductsFactory.get(self.backend)
 
-    def _resolve_backend(self, data: Any):
+    def _resolve_backend(self, data: Any) -> None:
         """
         Resolve the backend from input data if not already set.
         Called at the start of fit() to enable lazy detection.
@@ -63,7 +67,7 @@ class MultilinearModel(BaseTensorModel):
         """
         Returns the backend as a BackendType. If not set, infers from X and sets self.backend.
         :param X: Optional input to infer backend if not set.
-        :return: BackendType (NUMPY, TORCH, or PANDAS)
+        :return: BackendType (NUMPY or TORCH)
         """
         if self.backend is not None:
             return self.backend
@@ -77,8 +81,7 @@ class MultilinearModel(BaseTensorModel):
         Converts input to the appropriate type based on backend.
         - If backend is numpy, converts pandas DataFrame or torch Tensor to np.ndarray.
         - If backend is torch, converts pandas DataFrame or np.ndarray to torch.Tensor and moves to device.
-        - If backend is pandas, converts to pandas DataFrame.
-        :param X: Input data (np.ndarray, torch.Tensor, or pd.DataFrame)
+        :param X: Input data (np.ndarray or torch.Tensor)
         :return: Normalized input
         """
         backend = self.get_backend(X)
@@ -109,21 +112,6 @@ class MultilinearModel(BaseTensorModel):
                     return self.ops.to_device(torch.from_numpy(X.values))
             except ImportError:
                 pass
-        elif backend == BackendType.PANDAS:
-            try:
-                import pandas as pd
-            except ImportError:
-                raise ImportError("Pandas is required for PANDAS backend but is not installed.")
-            if isinstance(X, pd.DataFrame):
-                return X
-            if isinstance(X, np.ndarray):
-                return pd.DataFrame(X)
-            try:
-                import torch
-                if isinstance(X, torch.Tensor):
-                    return pd.DataFrame(X.cpu().numpy())
-            except ImportError:
-                pass
         raise ValueError("Unsupported input type for normalization.")
 
     def fit(self, X: Any, y: Any = None, **kwargs: Any) -> 'MultilinearModel':
@@ -146,14 +134,25 @@ class MultilinearModel(BaseTensorModel):
 
     def score(
         self,
-        factor_matrices,
-        Y_true,
+        X: Any,
+        y: Optional[Any] = None,
+        **kwargs: Any,
     ) -> float:
+        """Return the coefficient of determination R² of the prediction.
+
+        Parameters
+        ----------
+        X : array-like
+            Factor / dictionary matrices passed to :meth:`predict`.
+        y : array-like, optional
+            Ground-truth tensor.
+
+        Returns
+        -------
+        float
         """
-        Returns the coefficient of determination R^2 of the prediction.
-        """
-        Y_pred = self.predict(factor_matrices)
-        Y_true_flat = self.ops.flatten(self.normalize_input(Y_true))
+        Y_pred = self.predict(X)
+        Y_true_flat = self.ops.flatten(self.normalize_input(y))
         Y_pred_flat = self.ops.flatten(Y_pred)
         u = self.ops.sum((Y_true_flat - Y_pred_flat) ** 2)
         v = self.ops.sum((Y_true_flat - self.ops.mean(Y_true_flat)) ** 2)
@@ -163,28 +162,48 @@ class MultilinearModel(BaseTensorModel):
 
     def mse(
         self,
-        factor_matrices,
-        Y_true,
+        X: Any,
+        y: Any,
     ) -> float:
+        """Return the mean squared error (MSE) of the prediction.
+
+        Parameters
+        ----------
+        X : array-like
+            Factor / dictionary matrices passed to :meth:`predict`.
+        y : array-like
+            Ground-truth tensor.
+
+        Returns
+        -------
+        float
         """
-        Returns the mean squared error (MSE) of the prediction.
-        """
-        Y_pred = self.predict(factor_matrices)
-        Y_true_flat = self.ops.flatten(self.normalize_input(Y_true))
+        Y_pred = self.predict(X)
+        Y_true_flat = self.ops.flatten(self.normalize_input(y))
         Y_pred_flat = self.ops.flatten(Y_pred)
         mse = self.ops.mean((Y_true_flat - Y_pred_flat) ** 2)
         return float(mse)
 
     def mae(
         self,
-        factor_matrices,
-        Y_true,
+        X: Any,
+        y: Any,
     ) -> float:
+        """Return the mean absolute error (MAE) of the prediction.
+
+        Parameters
+        ----------
+        X : array-like
+            Factor / dictionary matrices passed to :meth:`predict`.
+        y : array-like
+            Ground-truth tensor.
+
+        Returns
+        -------
+        float
         """
-        Returns the mean absolute error (MAE) of the prediction.
-        """
-        Y_pred = self.predict(factor_matrices)
-        Y_true_flat = self.ops.flatten(self.normalize_input(Y_true))
+        Y_pred = self.predict(X)
+        Y_true_flat = self.ops.flatten(self.normalize_input(y))
         Y_pred_flat = self.ops.flatten(Y_pred)
         mae = self.ops.mean(self.ops.abs(Y_true_flat - Y_pred_flat))
         return float(mae)

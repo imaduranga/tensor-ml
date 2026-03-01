@@ -1,11 +1,15 @@
+"""Abstract base class for tensor-based models."""
+
 from abc import ABC, abstractmethod
 from typing import Optional, Any
+
+__all__ = ["BaseTensorModel"]
 
 
 class BaseTensorModel(ABC):
     """Abstract base class for tensor-based machine learning models.
 
-    Supports NumPy, PyTorch, and pandas DataFrame backends.
+    Supports NumPy and PyTorch backends.
     Subclasses must implement :meth:`fit` and :meth:`predict`.
     """
 
@@ -19,7 +23,7 @@ class BaseTensorModel(ABC):
         Parameters
         ----------
         X : array-like
-            Input data (``np.ndarray``, ``torch.Tensor``, or ``pd.DataFrame``).
+            Input data (``np.ndarray`` or ``torch.Tensor``).
         y : array-like, optional
             Target data.
 

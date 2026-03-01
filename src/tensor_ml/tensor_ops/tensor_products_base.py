@@ -7,6 +7,8 @@ Concrete subclasses live in ``tensor_products_numpy`` and
 
 from __future__ import annotations
 
+__all__ = ["TensorProductsBase"]
+
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 

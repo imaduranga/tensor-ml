@@ -1,7 +1,14 @@
-from typing import Optional, Union
+"""Tensor Least Angle Regression and Selection (T-LARS) algorithm."""
+
+from typing import Optional, Union, Any
+import logging
 import numpy as np
 from tensor_ml.tensor_models.multilinear.multilinear_model import MultilinearModel
 from tensor_ml.enums import BackendType
+
+__all__ = ["TLARS"]
+
+logger = logging.getLogger(__name__)
 
 
 class TLARS(MultilinearModel):
@@ -22,17 +29,14 @@ class TLARS(MultilinearModel):
         Column selection type: ``'KP'`` (Kronecker Product) or ``'KR'``
         (Khatri-Rao, restricts to diagonal Kronecker columns).
     debug_mode : bool, default=False
-        Enable verbose debug output.
-    path : str, default=''
-        File path for intermediate result output.
+        When ``True``, emit per-iteration ``DEBUG``-level log messages
+        via the ``tensor_ml.tensor_models.multilinear.tlars`` logger.
     active_coefficients : int, default=1_000_000
         Maximum number of active (non-zero) coefficients.
     iterations : int, default=1_000_000
         Maximum number of LARS iterations.
     precision_factor : int, default=5
         Multiplier for machine epsilon used as numerical precision.
-    plot_frequency : int, default=100
-        Iteration interval for progress plots (when enabled).
     backend : str | BackendType, optional
         Backend to use. Inferred from data if ``None``.
     device : str | torch.device, optional
@@ -45,11 +49,9 @@ class TLARS(MultilinearModel):
         l0_mode: bool = False,
         mask_type: str = 'KP',
         debug_mode: bool = False,
-        path: str = '',
         active_coefficients: int = int(1e6),
         iterations: int = int(1e6),
         precision_factor: int = 5,
-        plot_frequency: int = 100,
         backend: Optional[Union[str, BackendType]] = None,
         device: Optional[str] = None,
     ) -> None:
@@ -58,11 +60,9 @@ class TLARS(MultilinearModel):
         self.l0_mode = l0_mode
         self.mask_type = mask_type
         self.debug_mode = debug_mode
-        self.path = path
         self.active_coefficients = active_coefficients
         self.iterations = iterations
         self.precision_factor = precision_factor
-        self.plot_frequency = plot_frequency
         self.coef_tensor_ = None  # Solution tensor
         self.active_columns_ = None
         self.coef_ = None  # Solution vector
@@ -72,9 +72,9 @@ class TLARS(MultilinearModel):
     def fit(
         self,
         factor_matrices: list,
-        Y,
-        coef_tensor=None,
-    ):
+        Y: Any,
+        coef_tensor: Any = None,
+    ) -> 'TLARS':
         """
         Fits the TLARS model to the provided tensor data.
 
@@ -133,12 +133,24 @@ class TLARS(MultilinearModel):
 
         total_column_count = int(np.prod(core_tensor_shape))
 
+        logger.debug(
+            "TLARS setup: backend=%s, tensor_shape=%s, core_tensor_shape=%s, "
+            "total_columns=%d, orthogonal=%s, l0_mode=%s, mask_type=%s",
+            self.backend, tensor_shape, core_tensor_shape,
+            total_column_count, is_orthogonal, self.l0_mode, self.mask_type,
+        )
+
         # Normalize Y
         tensor_norm = self.ops.norm(Y)
         Y = Y / tensor_norm
         Y_vec = self.ops.flatten(Y)
         r = self.ops.copy(Y_vec)
         norm_r = [float(self.ops.to_scalar(self.ops.norm(r)))]
+
+        logger.debug(
+            "TLARS normalisation: tensor_norm=%.6g, initial ||r||=%.6g",
+            float(tensor_norm), norm_r[0],
+        )
 
         # Mask type logic (KR/KP)
         column_mask_indices = []
@@ -199,6 +211,12 @@ class TLARS(MultilinearModel):
         for t in range(int(self.iterations)):
             n_iter = t + 1
             n_active = len(active_columns)
+
+            if self.debug_mode:
+                logger.debug(
+                    "iter %d: n_active=%d, lambda=%.6g", n_iter, n_active, lambda_value,
+                )
+
             zI = self.ops.sign(c[active_columns])
 
             if n_active > 1 and not is_orthogonal:
@@ -212,6 +230,7 @@ class TLARS(MultilinearModel):
 
                 # Fallback if direction vector has NaN values
                 if self.ops.has_nan(dI):
+                    logger.debug("iter %d: NaN in direction vector, recomputing via pinv", n_iter)
                     GI = self.tp.get_gramian(gramians, active_columns, core_tensor_shape)
                     GInv = self.ops.pinv(GI)
                     dI = GInv @ zI
@@ -282,6 +301,11 @@ class TLARS(MultilinearModel):
 
             # Check stopping conditions
             if lambda_value < delta or lambda_value < 0 or delta < 0:
+                if self.debug_mode:
+                    logger.debug(
+                        "iter %d: stopping — lambda=%.6g, delta=%.6g",
+                        n_iter, lambda_value, delta,
+                    )
                 break
 
             # Update solution
@@ -303,14 +327,24 @@ class TLARS(MultilinearModel):
 
             # Stopping criteria
             if nr < self.tolerance or n_active >= self.active_coefficients:
+                if self.debug_mode:
+                    reason = "tolerance" if nr < self.tolerance else "max active coefficients"
+                    logger.debug(
+                        "iter %d: stopping — %s (||r||=%.6g, n_active=%d)",
+                        n_iter, reason, nr, n_active,
+                    )
                 break
 
             # Add or remove column from the active set
             if add_column_flag:
+                if self.debug_mode:
+                    logger.debug("iter %d: adding column %d", n_iter, changed_dict_column_index)
                 active_columns = self.ops.concatenate([active_columns, self.ops.asarray([changed_dict_column_index])])
                 coef_ = self.ops.concatenate([coef_, self.ops.zeros(1)])
                 changed_active_column_index = self.ops.numel(coef_) - 1
             else:
+                if self.debug_mode:
+                    logger.debug("iter %d: removing column %d", n_iter, changed_dict_column_index)
                 changed_active_column_index = self.ops.find_index(active_columns, changed_dict_column_index)
                 coef_ = self.ops.concatenate([coef_[:changed_active_column_index], coef_[changed_active_column_index + 1:]])
                 active_columns = self.ops.concatenate([active_columns[:changed_active_column_index], active_columns[changed_active_column_index + 1:]])
@@ -328,18 +362,25 @@ class TLARS(MultilinearModel):
         self.coef_ = coef_
         self.norm_r_ = norm_r
         self.n_iter_ = n_iter
+
+        logger.debug(
+            "TLARS finished: iterations=%d, final ||r||=%.6g, n_active=%d",
+            n_iter, norm_r[-1], len(active_columns),
+        )
+
         return self
 
     def predict(
         self,
-        factor_matrices: list,
-    ):
+        X: Any,
+        **kwargs: Any,
+    ) -> Any:
         """
         Predicts the target tensor using the learned coefficients and provided factor matrices.
 
         Parameters
         ----------
-        factor_matrices : List
+        X : list
             List of factor (dictionary) matrices for each tensor mode.
 
         Returns
@@ -350,7 +391,7 @@ class TLARS(MultilinearModel):
         if self.coef_tensor_ is None:
             raise ValueError("Model is not fitted yet. Call 'fit' before 'predict'.")
         normalized_matrices = []
-        for D in factor_matrices:
+        for D in X:
             D_normed = self.normalize_input(D)
             D_final = self.ops.normalize(D_normed)
             normalized_matrices.append(D_final)

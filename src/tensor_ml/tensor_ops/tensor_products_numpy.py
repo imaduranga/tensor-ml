@@ -5,6 +5,8 @@ from string import ascii_lowercase as letters
 
 from tensor_ml.tensor_ops.tensor_products_base import TensorProductsBase
 
+__all__ = ["NumpyTensorProducts"]
+
 
 class NumpyTensorProducts(TensorProductsBase):
     """NumPy backend for tensor-product operations."""

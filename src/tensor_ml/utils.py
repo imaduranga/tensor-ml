@@ -1,6 +1,10 @@
+"""Utility helpers for backend inference."""
+
 import numpy as np
 from typing import Any, Optional
 from tensor_ml.enums import BackendType
+
+__all__ = ["infer_backend"]
 
 def infer_backend(data: Any, backend: Optional[BackendType] = None) -> BackendType:
     """

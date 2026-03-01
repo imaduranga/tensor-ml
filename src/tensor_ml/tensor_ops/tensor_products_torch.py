@@ -5,6 +5,8 @@ from string import ascii_lowercase as letters
 
 from tensor_ml.tensor_ops.tensor_products_base import TensorProductsBase
 
+__all__ = ["TorchTensorProducts"]
+
 
 # ---------------------------------------------------------------------------
 # Fortran-order helpers (package-private)

@@ -1,6 +1,8 @@
 import numpy as np
-import torch
+import pytest
 from tensor_ml.tensor_ops.tensor_products_torch import TorchTensorProducts
+
+torch = pytest.importorskip("torch")
 
 
 class TestTensorProductsTorch:

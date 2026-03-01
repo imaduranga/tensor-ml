@@ -16,6 +16,8 @@ import numpy as np
 
 from tensor_ml.enums import BackendType
 
+__all__ = ["TensorOps", "NumpyOps", "TorchOps", "TensorOpsFactory"]
+
 
 # ---------------------------------------------------------------------------
 # Abstract base class
@@ -407,5 +409,5 @@ class TensorOpsFactory:
 TensorOpsFactory.register(BackendType.NUMPY, NumpyOps)
 try:
     TensorOpsFactory.register(BackendType.TORCH, TorchOps)
-except Exception:
+except ImportError:
     pass

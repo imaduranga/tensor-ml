@@ -19,6 +19,8 @@ from tensor_ml.enums import BackendType
 from tensor_ml.utils import infer_backend
 from tensor_ml.tensor_ops.tensor_products_base import TensorProductsBase
 
+__all__ = ["TensorProducts", "TensorProductsFactory"]
+
 
 # ---------------------------------------------------------------------------
 # Factory
@@ -90,7 +92,8 @@ _register_builtins()
 
 
 # ---------------------------------------------------------------------------
-# Singleton cache (one instance per (backend, device) pair)
+# Singleton cache (one instance per (backend, device) pair).
+# NOTE: Not thread-safe. If concurrent access is needed, guard with a lock.
 # ---------------------------------------------------------------------------
 
 _INSTANCE_CACHE: dict[tuple[BackendType, Any], TensorProductsBase] = {}

@@ -61,14 +61,14 @@ class TestMultilinearModel:
         arr2 = model.normalize_input(arr)
         assert isinstance(arr2, torch.Tensor)
 
-    def test_backend_pandas(self):
+    def test_backend_pandas_input_to_numpy(self):
+        """Pandas DataFrames passed to a NUMPY backend are converted to ndarray."""
         try:
             import pandas as pd
         except ImportError:
             pytest.skip('pandas not available')
-        model = DummyModel(backend='pandas')
-        df = pd.DataFrame([[1,2],[3,4]])
-        assert model.get_backend(df) == BackendType.PANDAS
-        arr2 = model.normalize_input(df)
-        assert hasattr(arr2, 'values')
+        model = DummyModel(backend='numpy')
+        df = pd.DataFrame([[1, 2], [3, 4]])
+        arr = model.normalize_input(df)
+        assert isinstance(arr, np.ndarray)
 

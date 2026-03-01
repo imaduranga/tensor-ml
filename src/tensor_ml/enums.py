@@ -1,4 +1,8 @@
+"""Backend enumeration types for tensor-ml."""
+
 from enum import Enum
+
+__all__ = ["BackendType"]
 
 
 class BackendType(Enum):
@@ -6,5 +10,4 @@ class BackendType(Enum):
 
     NUMPY = "numpy"
     TORCH = "torch"
-    PANDAS = "pandas"
 
