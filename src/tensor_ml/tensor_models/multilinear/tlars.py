@@ -1,11 +1,44 @@
-from typing import Optional, List, Union
+from typing import Optional, Union
 import numpy as np
 from tensor_ml.tensor_models.multilinear.multilinear_model import MultilinearModel
 from tensor_ml.enums import BackendType
-import tensor_ml.tensorops._tensor_products as tp
 
 
 class TLARS(MultilinearModel):
+    """Tensor Least Angle Regression and Selection (T-LARS).
+
+    Solves sparse tensor recovery problems by iteratively selecting columns
+    from a Kronecker-structured dictionary via the LARS/LASSO path.
+    Supports both L0 (greedy) and L1 (LASSO) modes.
+
+    Parameters
+    ----------
+    tolerance : float, default=0.075
+        Residual norm stopping threshold.
+    l0_mode : bool, default=False
+        If ``True``, use greedy L0 selection (no column removal).
+        If ``False``, use L1 (LASSO) with column add/remove.
+    mask_type : str, default='KP'
+        Column selection type: ``'KP'`` (Kronecker Product) or ``'KR'``
+        (Khatri-Rao, restricts to diagonal Kronecker columns).
+    debug_mode : bool, default=False
+        Enable verbose debug output.
+    path : str, default=''
+        File path for intermediate result output.
+    active_coefficients : int, default=1_000_000
+        Maximum number of active (non-zero) coefficients.
+    iterations : int, default=1_000_000
+        Maximum number of LARS iterations.
+    precision_factor : int, default=5
+        Multiplier for machine epsilon used as numerical precision.
+    plot_frequency : int, default=100
+        Iteration interval for progress plots (when enabled).
+    backend : str | BackendType, optional
+        Backend to use. Inferred from data if ``None``.
+    device : str | torch.device, optional
+        Device hint for the PyTorch backend.
+    """
+
     def __init__(
         self,
         tolerance: float = 0.075,
@@ -18,8 +51,8 @@ class TLARS(MultilinearModel):
         precision_factor: int = 5,
         plot_frequency: int = 100,
         backend: Optional[Union[str, BackendType]] = None,
-        device: Optional[Union[str, object]] = "cuda",
-    ):
+        device: Optional[str] = None,
+    ) -> None:
         super().__init__(backend=backend, device=device)
         self.tolerance = tolerance
         self.l0_mode = l0_mode
@@ -38,34 +71,41 @@ class TLARS(MultilinearModel):
 
     def fit(
         self,
-        factor_matrices: List[Union[np.ndarray, object]],
-        Y: Union[np.ndarray, object],
-        coef_tensor: Optional[Union[np.ndarray, object]] = None,
+        factor_matrices: list,
+        Y,
+        coef_tensor=None,
     ):
         """
         Fits the TLARS model to the provided tensor data.
 
         Parameters
         ----------
-        factor_matrices : List[Union[np.ndarray, object]]
-            List of factor (dictionary) matrices for each tensor mode. Each matrix should have shape (mode_dim, dict_size).
-        Y : Union[np.ndarray, object]
-            Target tensor to approximate, as a NumPy array or backend-specific tensor.
-        coef_tensor : Optional[Union[np.ndarray, object]], default=None
-            Optional initial coefficient tensor. If provided, nonzero entries are used to initialize the active set.
+        factor_matrices : List
+            List of factor (dictionary) matrices for each tensor mode.
+        Y : array-like
+            Target tensor to approximate.
+        coef_tensor : array-like, optional
+            Optional initial coefficient tensor for warm start.
 
         Returns
         -------
         self : TLARS
             Returns the fitted model instance.
         """
-        # Normalize input
+        # Resolve backend from data if not set explicitly
+        self._resolve_backend(Y)
+
+        # Normalize input (also handles device placement)
         Y = self.normalize_input(Y)
         factor_matrices = [self.normalize_input(D) for D in factor_matrices]
-        Y = self.ops.to_device(Y, self.device)
-        factor_matrices = [self.ops.to_device(D, self.device) for D in factor_matrices]
 
         order = Y.ndim
+        if len(factor_matrices) != order:
+            raise ValueError(
+                f"Number of factor matrices ({len(factor_matrices)}) must match "
+                f"the number of tensor modes ({order})."
+            )
+
         tensor_shape = Y.shape
         core_tensor_shape = []
         gramians = []
@@ -80,19 +120,15 @@ class TLARS(MultilinearModel):
             Dn = self.ops.normalize(D)
             factor_matrices[n] = Dn
             G_n = self.ops.gramian(Dn)
-            G_n = tp.tround(G_n, precision_order)
+            G_n = self.tp.tround(G_n, precision_order)
             gramians.append(G_n)
             core_tensor_shape.append(Dn.shape[1])
 
             # Check orthogonality
             if is_orthogonal:
-                G_check = tp.tround(G_n, 10)
-                I_n = np.eye(G_n.shape[0])
-                if self.backend == BackendType.TORCH:
-                    G_check = G_check.cpu().numpy()
-                else:
-                    G_check = np.asarray(G_check)
-                if not np.allclose(G_check, np.round(I_n, 10)):
+                G_check = self.tp.tround(G_n, 10)
+                I_n = self.ops.eye(G_n.shape[0])
+                if not self.ops.allclose(G_check, I_n):
                     is_orthogonal = False
 
         total_column_count = int(np.prod(core_tensor_shape))
@@ -101,43 +137,40 @@ class TLARS(MultilinearModel):
         tensor_norm = self.ops.norm(Y)
         Y = Y / tensor_norm
         Y_vec = self.ops.flatten(Y)
-        r = Y_vec.copy() if self.backend == BackendType.NUMPY else Y_vec.clone()
-        norm_r = [float(self.ops.norm(r).item()) if self.backend == BackendType.TORCH else float(self.ops.norm(r))]
+        r = self.ops.copy(Y_vec)
+        norm_r = [float(self.ops.to_scalar(self.ops.norm(r)))]
 
         # Mask type logic (KR/KP)
         column_mask_indices = []
         if self.mask_type == 'KR':
             if all(x == core_tensor_shape[0] for x in core_tensor_shape):
-                tensor_indices = tuple(1 for _ in range(order))  # 0-based second element
-                stride = tp.get_vector_index(tensor_indices, core_tensor_shape)
+                tensor_indices = tuple(1 for _ in range(order))
+                stride = self.tp.get_vector_index(tensor_indices, core_tensor_shape)
                 kr_columns = list(range(0, total_column_count, stride))
                 column_mask_indices = [i for i in range(total_column_count) if i not in kr_columns]
             else:
                 raise ValueError("Column dimensions of the dictionary matrices should be equal for Khatri-Rao Product.")
 
         # Initial correlation
-        C = tp.full_multilinear_product(Y, factor_matrices, use_transpose=True)
+        C = self.tp.full_multilinear_product(Y, factor_matrices, use_transpose=True)
         c = self.ops.flatten(C)
         del C
         if column_mask_indices:
             c[column_mask_indices] = 0
-        c = tp.tround(c, precision_order)
+        c = self.tp.tround(c, precision_order)
 
-        if self.backend == BackendType.TORCH:
-            lambda_value = float(self.ops.abs(c).max().item())
-        else:
-            lambda_value = float(self.ops.abs(c).max())
+        lambda_value = float(self.ops.to_scalar(self.ops.max(self.ops.abs(c))))
         changed_dict_column_index = int(self.ops.argmax(self.ops.abs(c)))
 
         # Initial active set
         add_column_flag = True
         active_columns = self.ops.asarray([changed_dict_column_index])
         coef_ = self.ops.zeros(1)
-        changed_active_column_index = 0  # 0-indexed
+        changed_active_column_index = 0
 
         # Track active factor column indices for sub-tensor optimization
         active_factor_column_indices = [[] for _ in range(order)]
-        col_indices = tp.get_kronecker_factor_column_indices(changed_dict_column_index, core_tensor_shape)
+        col_indices = self.tp.get_kronecker_factor_column_indices(changed_dict_column_index, core_tensor_shape)
         for n in range(order):
             active_factor_column_indices[n] = sorted(set(active_factor_column_indices[n]) | {int(col_indices[n])})
 
@@ -149,13 +182,18 @@ class TLARS(MultilinearModel):
             if len(nonzero_indices) > 0:
                 active_columns = nonzero_indices
                 coef_ = coef_tensor_flat[nonzero_indices]
+
+                # Rebuild active_factor_column_indices from ALL active columns
+                active_factor_column_indices = [set() for _ in range(order)]
+                for col in active_columns:
+                    ci = self.tp.get_kronecker_factor_column_indices(int(col), core_tensor_shape)
+                    for n in range(order):
+                        active_factor_column_indices[n].add(int(ci[n]))
+                active_factor_column_indices = [sorted(s) for s in active_factor_column_indices]
+
                 # Recompute GInv from full Gramian for warm start
-                GI = tp.get_gramian(gramians, active_columns, core_tensor_shape, device=self.device)
-                if self.backend == BackendType.NUMPY:
-                    GInv = np.linalg.pinv(np.asarray(GI))
-                else:
-                    import torch as _torch
-                    GInv = _torch.linalg.pinv(GI)
+                GI = self.tp.get_gramian(gramians, active_columns, core_tensor_shape)
+                GInv = self.ops.pinv(GI)
 
         n_iter = 0
         for t in range(int(self.iterations)):
@@ -164,24 +202,18 @@ class TLARS(MultilinearModel):
             zI = self.ops.sign(c[active_columns])
 
             if n_active > 1 and not is_orthogonal:
-                dI, GInv = tp.get_direction_vector(
-                    GInv=GInv, zI=zI, G=gramians, active_columns=active_columns,
+                dI, GInv = self.tp.get_direction_vector(
+                    GInv=GInv, zI=zI, gramians=gramians, active_columns=active_columns,
                     add_column_flag=add_column_flag,
                     changed_dict_column_index=changed_dict_column_index,
                     changed_active_column_index=changed_active_column_index,
                     tensor_shape=core_tensor_shape, precision_order=precision_order,
-                    device=self.device
                 )
 
                 # Fallback if direction vector has NaN values
-                has_nan = bool(np.any(np.isnan(dI))) if self.backend == BackendType.NUMPY else bool(dI.isnan().any())
-                if has_nan:
-                    GI = tp.get_gramian(gramians, active_columns, core_tensor_shape, device=self.device)
-                    if self.backend == BackendType.NUMPY:
-                        GInv = np.linalg.pinv(np.asarray(GI))
-                    else:
-                        import torch as _torch
-                        GInv = _torch.linalg.pinv(GI)
+                if self.ops.has_nan(dI):
+                    GI = self.tp.get_gramian(gramians, active_columns, core_tensor_shape)
+                    GInv = self.ops.pinv(GI)
                     dI = GInv @ zI
             elif is_orthogonal:
                 dI = zI
@@ -190,15 +222,15 @@ class TLARS(MultilinearModel):
                 dI = zI
 
             # Compute equicorrelation vector v = G @ A @ dI
-            v = tp.kronecker_matrix_vector_product(
+            v = self.tp.kronecker_matrix_vector_product(
                 factor_matrices=gramians, x=dI,
                 tensor_shape=core_tensor_shape, active_columns=active_columns,
                 active_indices=active_factor_column_indices,
-                use_transpose=False, device=self.device
+                use_transpose=False,
             )
             if column_mask_indices:
                 v[column_mask_indices] = 0
-            v = tp.tround(v, precision_order)
+            v = self.tp.tround(v, precision_order)
             v[active_columns] = self.ops.sign(v[active_columns])  # Enforce equicorrelation
 
             # Calculate delta_plus
@@ -246,7 +278,7 @@ class TLARS(MultilinearModel):
                     delta = min_delta_minus
                     add_column_flag = False
 
-            delta = float(tp.tround(np.array([delta]), precision_order)[0])
+            delta = float(self.tp.tround(np.array([delta]), precision_order)[0])
 
             # Check stopping conditions
             if lambda_value < delta or lambda_value < 0 or delta < 0:
@@ -254,19 +286,19 @@ class TLARS(MultilinearModel):
 
             # Update solution
             coef_ = coef_ + delta * dI
-            lambda_value = float(tp.tround(np.array([lambda_value - delta]), precision_order)[0])
+            lambda_value = float(self.tp.tround(np.array([lambda_value - delta]), precision_order)[0])
             c = c - delta * v
-            c[active_columns] = lambda_value * self.ops.sign(c[active_columns])  # Enforce equicorrelation
+            c[active_columns] = lambda_value * self.ops.sign(c[active_columns])
 
             # Update residual
-            ad = tp.kronecker_matrix_vector_product(
+            ad = self.tp.kronecker_matrix_vector_product(
                 factor_matrices=factor_matrices, x=dI,
                 tensor_shape=core_tensor_shape, active_columns=active_columns,
                 active_indices=active_factor_column_indices,
-                use_transpose=False, device=self.device
+                use_transpose=False,
             )
             r = r - delta * ad
-            nr = float(self.ops.norm(r).item()) if self.backend == BackendType.TORCH else float(self.ops.norm(r))
+            nr = float(self.ops.to_scalar(self.ops.norm(r)))
             norm_r.append(nr)
 
             # Stopping criteria
@@ -277,23 +309,20 @@ class TLARS(MultilinearModel):
             if add_column_flag:
                 active_columns = self.ops.concatenate([active_columns, self.ops.asarray([changed_dict_column_index])])
                 coef_ = self.ops.concatenate([coef_, self.ops.zeros(1)])
-                changed_active_column_index = len(coef_) - 1 if self.backend == BackendType.NUMPY else int(coef_.size(0)) - 1
+                changed_active_column_index = self.ops.numel(coef_) - 1
             else:
-                if self.backend == BackendType.NUMPY:
-                    changed_active_column_index = int(np.where(active_columns == changed_dict_column_index)[0][0])
-                else:
-                    changed_active_column_index = int((active_columns == changed_dict_column_index).nonzero()[0])
+                changed_active_column_index = self.ops.find_index(active_columns, changed_dict_column_index)
                 coef_ = self.ops.concatenate([coef_[:changed_active_column_index], coef_[changed_active_column_index + 1:]])
                 active_columns = self.ops.concatenate([active_columns[:changed_active_column_index], active_columns[changed_active_column_index + 1:]])
 
             # Update active factor column indices
-            col_indices = tp.get_kronecker_factor_column_indices(changed_dict_column_index, core_tensor_shape)
+            col_indices = self.tp.get_kronecker_factor_column_indices(changed_dict_column_index, core_tensor_shape)
             for n in range(order):
                 active_factor_column_indices[n] = sorted(set(active_factor_column_indices[n]) | {int(col_indices[n])})
 
         # Store results
         self.tensor_norm_ = tensor_norm
-        coef_tensor_result = tp.tensorize(x=coef_, tensor_shape=core_tensor_shape, active_elements=active_columns, device=self.device)
+        coef_tensor_result = self.tp.tensorize(x=coef_, tensor_shape=core_tensor_shape, active_elements=active_columns)
         self.coef_tensor_ = coef_tensor_result
         self.active_columns_ = active_columns
         self.coef_ = coef_
@@ -303,33 +332,29 @@ class TLARS(MultilinearModel):
 
     def predict(
         self,
-        factor_matrices: List[Union[np.ndarray, object]],
-    ) -> Union[np.ndarray, object]:
+        factor_matrices: list,
+    ):
         """
         Predicts the target tensor using the learned coefficients and provided factor matrices.
 
         Parameters
         ----------
-        factor_matrices : List[Union[np.ndarray, object]]
-            List of factor (dictionary) matrices for each tensor mode. Each matrix should have shape (mode_dim, dict_size).
+        factor_matrices : List
+            List of factor (dictionary) matrices for each tensor mode.
 
         Returns
         -------
-        Y_pred : Union[np.ndarray, object]
-            The predicted tensor, as a NumPy array or backend-specific tensor.
+        Y_pred : array-like
+            The predicted tensor.
         """
         if self.coef_tensor_ is None:
             raise ValueError("Model is not fitted yet. Call 'fit' before 'predict'.")
-        # Ensure factor_matrices are on the correct device and normalized
         normalized_matrices = []
         for D in factor_matrices:
             D_normed = self.normalize_input(D)
-            D_device = self.ops.to_device(D_normed, self.device)
-            D_final = self.ops.normalize(D_device)
+            D_final = self.ops.normalize(D_normed)
             normalized_matrices.append(D_final)
-        # Use the learned coef_tensor_ to reconstruct the tensor
-        Y_pred = tp.full_multilinear_product(self.coef_tensor_, normalized_matrices, use_transpose=False)
-        # Rescale by the stored normalization factor
+        Y_pred = self.tp.full_multilinear_product(self.coef_tensor_, normalized_matrices, use_transpose=False)
         Y_pred = Y_pred * self.tensor_norm_
         return Y_pred
 

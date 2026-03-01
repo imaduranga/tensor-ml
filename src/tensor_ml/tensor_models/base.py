@@ -1,37 +1,63 @@
-from typing import Optional, Any, Union
-import numpy as np
+from abc import ABC, abstractmethod
+from typing import Optional, Any
 
-class BaseTensorModel:
-    """Generic base class for tensor-based machine learning models supporting NumPy, PyTorch, and pandas DataFrame."""
 
-    def __init__(self):
+class BaseTensorModel(ABC):
+    """Abstract base class for tensor-based machine learning models.
+
+    Supports NumPy, PyTorch, and pandas DataFrame backends.
+    Subclasses must implement :meth:`fit` and :meth:`predict`.
+    """
+
+    def __init__(self) -> None:
         pass
 
+    @abstractmethod
     def fit(self, X: Any, y: Optional[Any] = None, **kwargs: Any) -> 'BaseTensorModel':
-        """
-        Fit the model to data.
+        """Fit the model to data.
 
-        :param X: np.ndarray, torch.Tensor, or pandas.DataFrame
-        :param y: np.ndarray, torch.Tensor, or pandas.DataFrame, optional
-        :return: self
-        """
-        raise NotImplementedError("fit method must be implemented by subclass.")
+        Parameters
+        ----------
+        X : array-like
+            Input data (``np.ndarray``, ``torch.Tensor``, or ``pd.DataFrame``).
+        y : array-like, optional
+            Target data.
 
+        Returns
+        -------
+        self : BaseTensorModel
+            The fitted model instance.
+        """
+        ...
+
+    @abstractmethod
     def predict(self, X: Any, **kwargs: Any) -> Any:
-        """
-        Predict using the model.
+        """Generate predictions from the fitted model.
 
-        :param X: np.ndarray, torch.Tensor, or pandas.DataFrame
-        :return: predictions as np.ndarray, torch.Tensor, or pandas.DataFrame
+        Parameters
+        ----------
+        X : array-like
+            Input data.
+
+        Returns
+        -------
+        predictions : array-like
+            Model predictions.
         """
-        raise NotImplementedError("predict method must be implemented by subclass.")
+        ...
 
     def score(self, X: Any, y: Optional[Any] = None, **kwargs: Any) -> float:
-        """
-        Return a score for predictions (e.g., accuracy, R^2, etc.).
+        """Return a default score for predictions (e.g., R², accuracy).
 
-        :param X: np.ndarray, torch.Tensor, or pandas.DataFrame
-        :param y: np.ndarray, torch.Tensor, or pandas.DataFrame, optional
-        :return: score as float
+        Parameters
+        ----------
+        X : array-like
+            Input data.
+        y : array-like, optional
+            Ground-truth target data.
+
+        Returns
+        -------
+        score : float
         """
         raise NotImplementedError("score method must be implemented by subclass.")

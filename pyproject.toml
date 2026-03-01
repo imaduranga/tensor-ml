@@ -5,12 +5,28 @@ description = "A library that provides a rich set of tools for tensor analysis, 
 authors = ["Ishan Wickramasingha"]
 license = "MIT"
 readme = "README.md"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
 
 [tool.poetry.dependencies]
 python = "^3.10"
 numpy = "^1.21.0"
-torch = "^1.9.0"
+
+[tool.poetry.extras]
+torch = ["torch"]
+
+[tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
+torch = "^1.9.0"
 
 [build-system]
 requires = ["poetry-core"]

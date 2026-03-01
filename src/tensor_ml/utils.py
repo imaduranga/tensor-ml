@@ -1,4 +1,3 @@
-import torch
 import numpy as np
 from typing import Any, Optional
 from tensor_ml.enums import BackendType
@@ -12,10 +11,13 @@ def infer_backend(data: Any, backend: Optional[BackendType] = None) -> BackendTy
     """
     if backend is not None:
         return backend
-    if isinstance(data, torch.Tensor) or (isinstance(data, list) and isinstance(data[0], torch.Tensor)):
-        return BackendType.TORCH
-    elif isinstance(data, np.ndarray) or (isinstance(data, list) and isinstance(data[0], np.ndarray)):
+    try:
+        import torch
+        if isinstance(data, torch.Tensor) or (isinstance(data, list) and len(data) > 0 and isinstance(data[0], torch.Tensor)):
+            return BackendType.TORCH
+    except ImportError:
+        pass
+    if isinstance(data, np.ndarray) or (isinstance(data, list) and len(data) > 0 and isinstance(data[0], np.ndarray)):
         return BackendType.NUMPY
-    else:
-        raise ValueError("Cannot infer backend from data type.")
+    raise ValueError("Cannot infer backend from data type.")
 

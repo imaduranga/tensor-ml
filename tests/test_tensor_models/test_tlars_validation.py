@@ -20,7 +20,7 @@ import time
 import numpy as np
 import pytest
 from tensor_ml.tensor_models.multilinear.tlars import TLARS
-import tensor_ml.tensorops._tensor_products as tp
+from tensor_ml import TensorProducts as tp
 
 
 # ---------------------------------------------------------------------------

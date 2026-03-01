@@ -3,57 +3,57 @@ from tensor_ml.tensorops.tensor_ops import TensorOps, NumpyOps
 
 class TestTensorOps:
     def test_norm(self):
-        ops = TensorOps()
+        ops = NumpyOps()
         x = np.array([3, 4])
         assert np.isclose(ops.norm(x), 5.0)
 
     def test_normalize(self):
-        ops = TensorOps()
+        ops = NumpyOps()
         D = np.array([[3, 0], [4, 5]])
         Dn = ops.normalize(D)
         assert np.allclose(np.linalg.norm(Dn, axis=0), 1)
 
     def test_zeros_ones(self):
-        ops = TensorOps()
+        ops = NumpyOps()
         assert np.all(ops.zeros((2, 2)) == 0)
         assert np.all(ops.ones((2, 2)) == 1)
 
     def test_abs_sign(self):
-        ops = TensorOps()
+        ops = NumpyOps()
         x = np.array([-1, 0, 2])
         assert np.all(ops.abs(x) == np.abs(x))
         assert np.all(ops.sign(x) == np.sign(x))
 
     def test_argmax_argmin(self):
-        ops = TensorOps()
+        ops = NumpyOps()
         x = np.array([1, 3, 2])
         assert ops.argmax(x) == 1
         assert ops.argmin(x) == 0
 
     def test_concatenate(self):
-        ops = TensorOps()
+        ops = NumpyOps()
         arrs = [np.ones((2,)), np.zeros((2,))]
         out = ops.concatenate(arrs)
         assert np.all(out == np.array([1, 1, 0, 0]))
 
     def test_inf_property(self):
-        ops = TensorOps()
+        ops = NumpyOps()
         assert ops.inf == np.inf
 
     def test_asarray_flatten(self):
-        ops = TensorOps()
+        ops = NumpyOps()
         x = [1, 2, 3]
         arr = ops.asarray(x)
         assert isinstance(arr, np.ndarray)
         assert np.all(ops.flatten(arr) == np.array([1, 2, 3]))
 
     def test_to_device(self):
-        ops = TensorOps()
+        ops = NumpyOps()
         x = np.array([1, 2])
         assert np.all(ops.to_device(x) == x)
 
     def test_nonzero(self):
-        ops = TensorOps()
+        ops = NumpyOps()
         x = np.array([0, 2, 0, 3])
         nz = ops.nonzero(x)
         assert np.all(nz == np.array([1, 3]))
@@ -72,7 +72,7 @@ try:
         def test_norm(self):
             ops = TorchOps()
             x = torch.tensor([3.0, 4.0])
-            assert torch.isclose(ops.norm(x), torch.tensor(5.0))
+            assert abs(ops.norm(x) - 5.0) < 1e-6
 
         def test_normalize(self):
             ops = TorchOps()
@@ -128,6 +128,6 @@ try:
         def test_torchops_inheritance(self):
             ops = TorchOps()
             assert isinstance(ops, TensorOps)
-            assert torch.isclose(ops.norm(torch.tensor([6.0, 8.0])), torch.tensor(10.0))
+            assert abs(ops.norm(torch.tensor([6.0, 8.0])) - 10.0) < 1e-6
 except ImportError:
     pass

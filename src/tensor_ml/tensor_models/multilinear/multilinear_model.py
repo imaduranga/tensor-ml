@@ -4,9 +4,11 @@ from tensor_ml.tensor_models.base import BaseTensorModel
 from tensor_ml.enums import BackendType
 from tensor_ml.utils import infer_backend
 from tensor_ml.tensorops.tensor_ops import TensorOpsFactory
+from tensor_ml.tensorops.tensor_products import TensorProductsFactory
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class MultilinearModel(BaseTensorModel):
     """
@@ -19,37 +21,44 @@ class MultilinearModel(BaseTensorModel):
 
         Parameters
         ----------
-        backend : Optional[Union[str, BackendType]], default=BackendType.NUMPY
-            Backend to use (NUMPY, TORCH, or PANDAS). If None, will be inferred from data.
-        device : Optional[Union[str, torch.device]], default='cuda'
-            Device for torch tensors ('cuda', 'cpu', 'spu', or torch.device). Defaults to 'cuda'. If not available, will use 'cpu'.
+        backend : Optional[Union[str, BackendType]], default=None
+            Backend to use (NUMPY, TORCH, or PANDAS). If None, will be inferred from data at fit time.
+        device : Optional[Union[str, Any]], default='cuda'
+            Device for torch tensors ('cuda', 'cpu', or torch.device). Defaults to 'cuda'.
+            If not available, will use 'cpu'. Ignored for non-torch backends.
         """
         super().__init__()
+        self._device_hint = device
 
-        if backend is None:
-            self.backend = BackendType.NUMPY
-        elif isinstance(backend, BackendType):
-            self.backend = backend
+        if backend is not None:
+            if isinstance(backend, BackendType):
+                self.backend = backend
+            else:
+                self.backend = BackendType(str(backend).lower())
+            self._setup_ops()
         else:
-            self.backend = BackendType(str(backend))
+            self.backend = None
+            self.ops = None
+            self.tp = None
 
-        self.device = None
+    def _setup_ops(self):
+        """Create the ops and tensor-products instances for the current backend."""
         if self.backend == BackendType.TORCH:
-            try:
-                import torch
-                dev = str(device) if device is not None else 'cuda'
-                if dev == 'cuda' and not torch.cuda.is_available():
-                    dev = 'cpu'
-                self.device = torch.device(dev)
-            except ImportError:
-                raise ImportError("PyTorch is required for TORCH backend but is not installed.")
-        elif self.backend == BackendType.PANDAS:
-            try:
-                import pandas as pd
-            except ImportError:
-                raise ImportError("Pandas is required for PANDAS backend but is not installed.")
+            self.ops = TensorOpsFactory.get(self.backend, self._device_hint)
+            self.tp = TensorProductsFactory.get(self.backend, self._device_hint)
+        else:
+            self.ops = TensorOpsFactory.get(self.backend)
+            self.tp = TensorProductsFactory.get(self.backend)
 
-        self.ops = TensorOpsFactory.get(self.backend, self.device)
+    def _resolve_backend(self, data: Any):
+        """
+        Resolve the backend from input data if not already set.
+        Called at the start of fit() to enable lazy detection.
+        """
+        if self.backend is not None and self.ops is not None:
+            return
+        self.backend = infer_backend(data)
+        self._setup_ops()
 
     def get_backend(self, X: Any = None) -> BackendType:
         """
@@ -60,58 +69,47 @@ class MultilinearModel(BaseTensorModel):
         if self.backend is not None:
             return self.backend
         if X is not None:
-            # Use shared infer_backend for numpy/torch, else handle pandas
-            try:
-                self.backend = infer_backend(X)
-            except ValueError:
-                # Only import pandas if needed
-                try:
-                    import pandas as pd
-                except ImportError:
-                    raise ImportError("Pandas is required for PANDAS backend but is not installed.")
-                if isinstance(X, pd.DataFrame):
-                    self.backend = BackendType.PANDAS
-                else:
-                    raise ValueError("Input X must be a numpy.ndarray, torch.Tensor, or pandas.DataFrame")
+            self._resolve_backend(X)
             return self.backend
         raise ValueError("Backend is not set and cannot be inferred without input X.")
 
     def normalize_input(self, X: Any) -> Any:
         """
         Converts input to the appropriate type based on backend.
-        - If backend is numpy, converts pandas DataFrame to np.ndarray.
-        - If backend is torch, converts pandas DataFrame or np.ndarray to torch.Tensor and moves to the device set in __init__.
-        - If backend is pandas, returns as is.
+        - If backend is numpy, converts pandas DataFrame or torch Tensor to np.ndarray.
+        - If backend is torch, converts pandas DataFrame or np.ndarray to torch.Tensor and moves to device.
+        - If backend is pandas, converts to pandas DataFrame.
         :param X: Input data (np.ndarray, torch.Tensor, or pd.DataFrame)
         :return: Normalized input
         """
         backend = self.get_backend(X)
         if backend == BackendType.NUMPY:
-            # Only import pandas if needed
             try:
                 import pandas as pd
+                if isinstance(X, pd.DataFrame):
+                    return X.values
             except ImportError:
-                pd = None
-            if pd is not None and isinstance(X, pd.DataFrame):
-                return X.values
+                pass
             if isinstance(X, np.ndarray):
                 return X
-            # Only import torch if needed
-            if 'torch' in globals() and isinstance(X, torch.Tensor):
-                return X.cpu().numpy()
+            try:
+                import torch
+                if isinstance(X, torch.Tensor):
+                    return X.cpu().numpy()
+            except ImportError:
+                pass
         elif backend == BackendType.TORCH:
             import torch
             if isinstance(X, torch.Tensor):
-                return X.to(self.device)
+                return self.ops.to_device(X)
             if isinstance(X, np.ndarray):
-                return torch.from_numpy(X).to(self.device)
-            # Only import pandas if needed
+                return self.ops.to_device(torch.from_numpy(X))
             try:
                 import pandas as pd
+                if isinstance(X, pd.DataFrame):
+                    return self.ops.to_device(torch.from_numpy(X.values))
             except ImportError:
-                pd = None
-            if pd is not None and isinstance(X, pd.DataFrame):
-                return torch.from_numpy(X.values).to(self.device)
+                pass
         elif backend == BackendType.PANDAS:
             try:
                 import pandas as pd
@@ -121,9 +119,12 @@ class MultilinearModel(BaseTensorModel):
                 return X
             if isinstance(X, np.ndarray):
                 return pd.DataFrame(X)
-            # Only import torch if needed
-            if 'torch' in globals() and isinstance(X, torch.Tensor):
-                return pd.DataFrame(X.cpu().numpy())
+            try:
+                import torch
+                if isinstance(X, torch.Tensor):
+                    return pd.DataFrame(X.cpu().numpy())
+            except ImportError:
+                pass
         raise ValueError("Unsupported input type for normalization.")
 
     def fit(self, X: Any, y: Any = None, **kwargs: Any) -> 'MultilinearModel':
@@ -188,3 +189,4 @@ class MultilinearModel(BaseTensorModel):
         Y_pred_flat = self.ops.flatten(Y_pred)
         mae = self.ops.mean(self.ops.abs(Y_true_flat - Y_pred_flat))
         return float(mae)
+
