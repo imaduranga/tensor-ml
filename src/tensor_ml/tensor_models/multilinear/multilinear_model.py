@@ -3,8 +3,7 @@ import numpy as np
 from tensor_ml.tensor_models.base import BaseTensorModel
 from tensor_ml.enums import BackendType
 from tensor_ml.utils import infer_backend
-from tensor_ml.tensorops.tensor_ops import TensorOpsFactory
-from tensor_ml.tensorops.tensor_products import TensorProductsFactory
+from tensor_ml.tensor_ops import TensorOpsFactory, TensorProductsFactory
 import logging
 
 logger = logging.getLogger(__name__)

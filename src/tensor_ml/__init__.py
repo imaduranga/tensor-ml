@@ -2,7 +2,7 @@
 
 from tensor_ml.enums import BackendType
 
-from tensor_ml.tensorops import (
+from tensor_ml.tensor_ops import (
     # TensorOps
     TensorOps, NumpyOps, TensorOpsFactory,
     # TensorProducts
@@ -10,9 +10,7 @@ from tensor_ml.tensorops import (
     NumpyTensorProducts,
 )
 
-from tensor_ml.tensor_models.base import BaseTensorModel
-from tensor_ml.tensor_models.multilinear.multilinear_model import MultilinearModel
-from tensor_ml.tensor_models.multilinear.tlars import TLARS
+from tensor_ml.tensor_models import BaseTensorModel, MultilinearModel, TLARS
 
 __all__ = [
     "BackendType",
@@ -26,7 +24,7 @@ __all__ = [
 ]
 
 try:
-    from tensor_ml.tensorops import TorchOps, TorchTensorProducts
+    from tensor_ml.tensor_ops import TorchOps, TorchTensorProducts
     __all__ += ["TorchOps", "TorchTensorProducts"]
 except ImportError:
     pass

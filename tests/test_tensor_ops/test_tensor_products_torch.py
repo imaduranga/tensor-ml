@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from tensor_ml.tensorops.tensor_products_torch import TorchTensorProducts
+from tensor_ml.tensor_ops.tensor_products_torch import TorchTensorProducts
 
 
 class TestTensorProductsTorch:

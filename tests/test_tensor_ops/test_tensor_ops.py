@@ -1,5 +1,5 @@
 import numpy as np
-from tensor_ml.tensorops.tensor_ops import TensorOps, NumpyOps
+from tensor_ml.tensor_ops.tensor_ops import TensorOps, NumpyOps
 
 class TestTensorOps:
     def test_norm(self):
@@ -66,7 +66,7 @@ class TestTensorOps:
 # TorchOps tests (if torch is available)
 try:
     import torch
-    from tensor_ml.tensorops.tensor_ops import TorchOps
+    from tensor_ml.tensor_ops.tensor_ops import TorchOps
 
     class TestTorchOps:
         def test_norm(self):

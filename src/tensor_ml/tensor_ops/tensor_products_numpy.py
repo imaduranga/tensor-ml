@@ -3,7 +3,7 @@
 import numpy as np
 from string import ascii_lowercase as letters
 
-from tensor_ml.tensorops.tensor_products import TensorProductsBase
+from tensor_ml.tensor_ops.tensor_products_base import TensorProductsBase
 
 
 class NumpyTensorProducts(TensorProductsBase):

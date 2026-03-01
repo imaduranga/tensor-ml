@@ -1,5 +1,5 @@
 import numpy as np
-from tensor_ml.tensorops.tensor_products_numpy import NumpyTensorProducts
+from tensor_ml.tensor_ops.tensor_products_numpy import NumpyTensorProducts
 
 
 class TestTensorProductsNumpy:

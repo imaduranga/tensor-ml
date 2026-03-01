@@ -392,6 +392,11 @@ class TensorOpsFactory:
             backend = BackendType(backend.lower())
         ops_class = cls._registry.get(backend)
         if ops_class is None:
+            if backend == BackendType.TORCH:
+                raise ImportError(
+                    "PyTorch is required for the TORCH backend but is not installed. "
+                    "Install it with: pip install torch"
+                )
             raise ValueError(f"Unsupported backend: {backend}")
         if backend == BackendType.TORCH:
             return ops_class(device=device)
@@ -400,4 +405,7 @@ class TensorOpsFactory:
 
 # Register built-in backends
 TensorOpsFactory.register(BackendType.NUMPY, NumpyOps)
-TensorOpsFactory.register(BackendType.TORCH, TorchOps)
+try:
+    TensorOpsFactory.register(BackendType.TORCH, TorchOps)
+except Exception:
+    pass

@@ -1,24 +1,23 @@
 """PyTorch implementation of :class:`TensorProductsBase`."""
 
 import numpy as np
-import torch
 from string import ascii_lowercase as letters
 
-from tensor_ml.tensorops.tensor_products import TensorProductsBase
+from tensor_ml.tensor_ops.tensor_products_base import TensorProductsBase
 
 
 # ---------------------------------------------------------------------------
 # Fortran-order helpers (package-private)
 # ---------------------------------------------------------------------------
 
-def _torch_flatten_fortran(x: torch.Tensor) -> torch.Tensor:
+def _torch_flatten_fortran(x):
     """Flatten a torch tensor in Fortran (column-major) order, matching MATLAB's X(:)."""
     if x.ndim <= 1:
         return x.contiguous().flatten()
     return x.permute(*reversed(range(x.ndim))).contiguous().flatten()
 
 
-def _torch_reshape_fortran(x: torch.Tensor, shape) -> torch.Tensor:
+def _torch_reshape_fortran(x, shape):
     """Reshape a 1D torch tensor to given shape in Fortran (column-major) order."""
     shape = list(shape)
     if len(shape) <= 1:
@@ -34,11 +33,14 @@ class TorchTensorProducts(TensorProductsBase):
     """PyTorch backend for tensor-product operations."""
 
     def __init__(self, device=None):
+        import torch
+        self.torch = torch
         self.device = device
 
     # ── Products ───────────────────────────────────────────────────
 
-    def kronecker_product(self, matrices: list[torch.Tensor]) -> torch.Tensor:
+    def kronecker_product(self, matrices):
+        torch = self.torch
         if not matrices:
             raise ValueError("The list of matrices is empty.")
         matrices = [torch.tensor(m) if not isinstance(m, torch.Tensor) else m for m in matrices]
@@ -48,7 +50,8 @@ class TorchTensorProducts(TensorProductsBase):
             result = torch.kron(result, matrix)
         return result
 
-    def khatri_rao_product(self, matrices: list[torch.Tensor]) -> torch.Tensor:
+    def khatri_rao_product(self, matrices):
+        torch = self.torch
         if not matrices:
             raise ValueError("The list of matrices is empty.")
         matrices = [torch.tensor(m) if not isinstance(m, torch.Tensor) else m for m in matrices]
@@ -65,7 +68,8 @@ class TorchTensorProducts(TensorProductsBase):
         ])
         return result
 
-    def tensor_product(self, matrices: list[torch.Tensor]) -> torch.Tensor:
+    def tensor_product(self, matrices):
+        torch = self.torch
         if not matrices:
             raise ValueError("The list of matrices is empty.")
         matrices = [torch.tensor(m) if not isinstance(m, torch.Tensor) else m for m in matrices]
@@ -75,7 +79,8 @@ class TorchTensorProducts(TensorProductsBase):
             result = torch.tensordot(result, matrix, dims=0)
         return result
 
-    def hadamard_product(self, tensors: list) -> torch.Tensor:
+    def hadamard_product(self, tensors):
+        torch = self.torch
         if not tensors:
             raise ValueError("The list of tensors is empty.")
         tensors = [torch.tensor(t) if not isinstance(t, torch.Tensor) else t for t in tensors]
@@ -91,6 +96,7 @@ class TorchTensorProducts(TensorProductsBase):
         return self.kronecker_product(selected_columns)
 
     def full_multilinear_product(self, X, factor_matrices, use_transpose=False):
+        torch = self.torch
         if not isinstance(X, torch.Tensor):
             X = torch.tensor(X)
         factor_matrices = [torch.tensor(m) if not isinstance(m, torch.Tensor) else m for m in factor_matrices]
@@ -111,6 +117,7 @@ class TorchTensorProducts(TensorProductsBase):
     def kronecker_matrix_vector_product(self, factor_matrices, x, tensor_shape,
                                          active_columns, active_indices=None,
                                          use_transpose=False):
+        torch = self.torch
         device = x.device
 
         X = torch.zeros(np.prod(tensor_shape), dtype=torch.double, device=device)
@@ -140,6 +147,7 @@ class TorchTensorProducts(TensorProductsBase):
     # ── Vectorize / tensorize ──────────────────────────────────────
 
     def tensorize(self, x, tensor_shape, active_elements):
+        torch = self.torch
         device = x.device
         X = torch.zeros(np.prod(tensor_shape), dtype=torch.double, device=device)
         X[active_elements] = x
@@ -151,6 +159,7 @@ class TorchTensorProducts(TensorProductsBase):
     # ── Gramian / direction vector ─────────────────────────────────
 
     def get_gramian(self, gramians, active_columns, tensor_shape):
+        torch = self.torch
         device = gramians[0].device
         GI = torch.zeros(len(active_columns), len(active_columns), dtype=torch.double, device=device)
         for i in range(len(active_columns)):
@@ -164,6 +173,7 @@ class TorchTensorProducts(TensorProductsBase):
                               add_column_flag, changed_dict_column_index,
                               changed_active_column_index, tensor_shape,
                               precision_order=10):
+        torch = self.torch
         device = zI.device
         N = len(active_columns)
 
@@ -208,6 +218,7 @@ class TorchTensorProducts(TensorProductsBase):
     # ── Rounding ───────────────────────────────────────────────────
 
     def tround(self, tensor, precision_order=0):
+        torch = self.torch
         if not isinstance(tensor, torch.Tensor):
             tensor = torch.tensor(tensor)
         return torch.round(tensor * 10 ** precision_order) * 10 ** -precision_order
