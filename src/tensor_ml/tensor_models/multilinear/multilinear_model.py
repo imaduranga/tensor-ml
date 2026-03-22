@@ -6,6 +6,7 @@ from tensor_ml.tensor_models.base import BaseTensorModel
 from tensor_ml.enums import BackendType
 from tensor_ml.utils import infer_backend
 from tensor_ml.tensor_ops import TensorOpsFactory, TensorProductsFactory
+from tensor_ml.exceptions import BackendError, ValidationError
 import logging
 
 __all__ = ["MultilinearModel"]
@@ -46,6 +47,8 @@ class MultilinearModel(BaseTensorModel):
 
     def _setup_ops(self) -> None:
         """Create the ops and tensor-products instances for the current backend."""
+        if self.backend is None:
+            return
         if self.backend == BackendType.TORCH:
             self.ops = TensorOpsFactory.get(self.backend, self._device_hint)
             self.tp = TensorProductsFactory.get(self.backend, self._device_hint)
@@ -54,35 +57,43 @@ class MultilinearModel(BaseTensorModel):
             self.tp = TensorProductsFactory.get(self.backend)
 
     def _resolve_backend(self, data: Any) -> None:
-        """
-        Resolve the backend from input data if not already set.
-        Called at the start of fit() to enable lazy detection.
-        """
+        """Resolve the backend from *data* if not already set."""
         if self.backend is not None and self.ops is not None:
             return
         self.backend = infer_backend(data)
         self._setup_ops()
 
     def get_backend(self, X: Any = None) -> BackendType:
-        """
-        Returns the backend as a BackendType. If not set, infers from X and sets self.backend.
-        :param X: Optional input to infer backend if not set.
-        :return: BackendType (NUMPY or TORCH)
+        """Return the backend type, inferring from *X* if not already set.
+
+        Parameters
+        ----------
+        X : array-like, optional
+            Input data used to infer the backend when not explicitly set.
+
+        Returns
+        -------
+        BackendType
         """
         if self.backend is not None:
             return self.backend
         if X is not None:
             self._resolve_backend(X)
             return self.backend
-        raise ValueError("Backend is not set and cannot be inferred without input X.")
+        raise BackendError("Backend is not set and cannot be inferred without input X.")
 
     def normalize_input(self, X: Any) -> Any:
-        """
-        Converts input to the appropriate type based on backend.
-        - If backend is numpy, converts pandas DataFrame or torch Tensor to np.ndarray.
-        - If backend is torch, converts pandas DataFrame or np.ndarray to torch.Tensor and moves to device.
-        :param X: Input data (np.ndarray or torch.Tensor)
-        :return: Normalized input
+        """Convert *X* to the backend's native array type.
+
+        Parameters
+        ----------
+        X : array-like
+            Input data (``np.ndarray``, ``torch.Tensor``, or ``pandas.DataFrame``).
+
+        Returns
+        -------
+        array-like
+            The normalised input on the correct device.
         """
         backend = self.get_backend(X)
         if backend == BackendType.NUMPY:
@@ -112,23 +123,35 @@ class MultilinearModel(BaseTensorModel):
                     return self.ops.to_device(torch.from_numpy(X.values))
             except ImportError:
                 pass
-        raise ValueError("Unsupported input type for normalization.")
+        raise ValidationError("Unsupported input type for normalization.")
 
     def fit(self, X: Any, y: Any = None, **kwargs: Any) -> 'MultilinearModel':
-        """
-        Fit the multilinear model to data. Must be implemented by subclasses.
-        Handles backend detection and input normalization.
-        :param X: np.ndarray, torch.Tensor, or pandas.DataFrame
-        :param y: np.ndarray, torch.Tensor, or pandas.DataFrame, optional
-        :return: self
+        """Fit the model to data (must be overridden by subclasses).
+
+        Parameters
+        ----------
+        X : array-like
+            Input data.
+        y : array-like, optional
+            Target data.
+
+        Returns
+        -------
+        self : MultilinearModel
         """
         raise NotImplementedError("fit method must be implemented by subclass.")
 
     def predict(self, X: Any, **kwargs: Any) -> Any:
-        """
-        Predict using the multilinear model. Must be implemented by subclasses.
-        :param X: np.ndarray, torch.Tensor, or pandas.DataFrame
-        :return: predictions as np.ndarray, torch.Tensor, or pandas.DataFrame
+        """Generate predictions (must be overridden by subclasses).
+
+        Parameters
+        ----------
+        X : array-like
+            Input data.
+
+        Returns
+        -------
+        predictions : array-like
         """
         raise NotImplementedError("predict method must be implemented by subclass.")
 

@@ -33,7 +33,10 @@ venv/
 env/
 .Python
 
-# Poetry / pipenv
+# uv
+uv.lock
+
+# Poetry / pipenv (legacy)
 .poetry/
 
 # Misc

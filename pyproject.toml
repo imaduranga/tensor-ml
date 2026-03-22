@@ -1,11 +1,11 @@
-[tool.poetry]
+[project]
 name = "tensor-ml"
-version = "0.1.0"
+version = "0.2.0"
 description = "A library that provides a rich set of tools for tensor analysis, multi-linear algebra, tensor regression and multi-dimensional sparse signal representations."
-authors = ["Ishan Wickramasingha"]
-license = "MIT"
+authors = [{ name = "Ishan Wickramasingha" }]
+license = { text = "MIT" }
 readme = "README.md"
-repository = "https://github.com/IW276/tensor-ml"
+requires-python = ">=3.10"
 keywords = ["tensor", "multilinear", "sparse", "LARS", "T-LARS", "machine-learning"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -15,22 +15,44 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
+dependencies = [
+    "numpy>=1.21.0",
+    "pydantic>=2.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-numpy = "^1.21.0"
-torch = {version = "^1.9.0", optional = true}
+[project.optional-dependencies]
+torch = ["torch>=1.9.0"]
+progress = ["tqdm>=4.60.0"]
 
-[tool.poetry.extras]
-torch = ["torch"]
+[project.urls]
+Repository = "https://github.com/IW276/tensor-ml"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.4"
-torch = "^1.9.0"
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0",
+    "torch>=1.9.0",
+    "tqdm>=4.60.0",
+    "matplotlib>=3.5.0",
+    "ipykernel>=6.0",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["tensor_ml"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

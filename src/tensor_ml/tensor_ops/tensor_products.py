@@ -18,6 +18,7 @@ import numpy as np
 from tensor_ml.enums import BackendType
 from tensor_ml.utils import infer_backend
 from tensor_ml.tensor_ops.tensor_products_base import TensorProductsBase
+from tensor_ml.exceptions import BackendError, ValidationError
 
 __all__ = ["TensorProducts", "TensorProductsFactory"]
 
@@ -64,7 +65,7 @@ class TensorProductsFactory:
         products_class = cls._registry.get(backend)
         if products_class is None:
             if backend == BackendType.TORCH:
-                raise ImportError(
+                raise BackendError(
                     "PyTorch is required for the TORCH backend but is not installed. "
                     "Install it with: pip install torch"
                 )

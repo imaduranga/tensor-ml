@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Any, Dict
 
+from tensor_ml.exceptions import NotFittedError
+
 __all__ = ["BaseTensorModel"]
 
 
@@ -29,7 +31,7 @@ class BaseTensorModel(ABC):
         params : dict
             Parameter names mapped to their values.
         """
-        raise NotImplementedError("get_params must be implemented by subclass.")
+        raise NotFittedError("get_params must be implemented by subclass.")
 
     def set_params(self, **params: Any) -> 'BaseTensorModel':
         """Set the parameters of this estimator.
@@ -43,7 +45,7 @@ class BaseTensorModel(ABC):
         -------
         self : BaseTensorModel
         """
-        raise NotImplementedError("set_params must be implemented by subclass.")
+        raise NotFittedError("set_params must be implemented by subclass.")
 
     @abstractmethod
     def fit(self, X: Any, y: Optional[Any] = None, **kwargs: Any) -> 'BaseTensorModel':
@@ -93,4 +95,4 @@ class BaseTensorModel(ABC):
         -------
         score : float
         """
-        raise NotImplementedError("score method must be implemented by subclass.")
+        raise NotFittedError("score method must be implemented by subclass.")

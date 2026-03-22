@@ -10,6 +10,7 @@ import numpy as np
 from pydantic import BaseModel, Field, field_validator
 from tensor_ml.tensor_models.multilinear.multilinear_model import MultilinearModel
 from tensor_ml.enums import BackendType
+from tensor_ml.exceptions import NotFittedError, ValidationError, ShapeMismatchError
 
 __all__ = ["TLARS", "TLARSConfig"]
 
@@ -30,6 +31,7 @@ class TLARSConfig(BaseModel):
     active_coefficients: int = Field(int(1e6), gt=0, description="Maximum number of active (non-zero) coefficients.")
     iterations: int = Field(int(1e6), gt=0, description="Maximum number of LARS iterations.")
     precision_factor: int = Field(5, gt=0, description="Multiplier for machine epsilon used as numerical precision.")
+    show_progress: bool = Field(default=False, description="If True, display a tqdm progress bar during fitting (requires tqdm).")
     backend: Optional[Union[str, BackendType]] = Field(default=None, description="Backend to use ('numpy', 'torch', etc.). Inferred from data if None.")
     device: Optional[str] = Field(default=None, description="Device hint for the backend (e.g., 'cpu', 'cuda').")
 
@@ -67,6 +69,8 @@ class TLARS(MultilinearModel):
         Maximum number of LARS iterations.
     precision_factor : int, default=5
         Multiplier for machine epsilon.
+    show_progress : bool, default=False
+        Display a ``tqdm`` progress bar during fitting (requires ``tqdm``).
     backend : str or BackendType, optional
         Backend to use.  Inferred from data if ``None``.
     device : str, optional
@@ -99,6 +103,11 @@ class TLARS(MultilinearModel):
         self.n_iter_ = 0
         self.tensor_norm_ = None
         self.precision = self.config.precision_factor * np.finfo(float).eps
+
+    def __repr__(self) -> str:
+        params = ", ".join(f"{k}={v!r}" for k, v in self.config.model_dump().items()
+                          if v != TLARSConfig.model_fields[k].default)
+        return f"TLARS({params})" if params else "TLARS()"
 
     # ------------------------------------------------------------------
     # Parameter introspection (scikit-learn-style)
@@ -171,6 +180,24 @@ class TLARS(MultilinearModel):
             self._setup_ops()
         return self
 
+    def cpu(self) -> 'TLARS':
+        """Move the model to CPU.
+
+        Returns
+        -------
+        self : TLARS
+        """
+        return self.to(device='cpu')
+
+    def cuda(self) -> 'TLARS':
+        """Move the model to CUDA.
+
+        Returns
+        -------
+        self : TLARS
+        """
+        return self.to(backend='torch', device='cuda')
+
     # ------------------------------------------------------------------
     # Fit / predict
     # ------------------------------------------------------------------
@@ -198,9 +225,9 @@ class TLARS(MultilinearModel):
             Returns the fitted model instance.
         """
         if not isinstance(factor_matrices, list) or len(factor_matrices) == 0:
-            raise ValueError("factor_matrices must be a non-empty list of matrices")
+            raise ValidationError("factor_matrices must be a non-empty list of matrices")
         if Y is None:
-            raise ValueError("Y (target tensor) must not be None")
+            raise ValidationError("Y (target tensor) must not be None")
 
         # Unpack config for readability
         tolerance = self.config.tolerance
@@ -220,7 +247,7 @@ class TLARS(MultilinearModel):
 
         order = Y.ndim
         if len(factor_matrices) != order:
-            raise ValueError(
+            raise ShapeMismatchError(
                 f"Number of factor matrices ({len(factor_matrices)}) must match "
                 f"the number of tensor modes ({order})."
             )
@@ -280,7 +307,7 @@ class TLARS(MultilinearModel):
                 kr_columns = list(range(0, total_column_count, stride))
                 column_mask_indices = [i for i in range(total_column_count) if i not in kr_columns]
             else:
-                raise ValueError("Column dimensions of the dictionary matrices should be equal for Khatri-Rao Product.")
+                raise ShapeMismatchError("Column dimensions of the dictionary matrices should be equal for Khatri-Rao Product.")
 
         # Initial correlation
         C = self.tp.full_multilinear_product(Y, factor_matrices, use_transpose=True)
@@ -327,7 +354,19 @@ class TLARS(MultilinearModel):
                 GInv = self.ops.pinv(GI)
 
         n_iter = 0
-        for t in range(int(iterations)):
+        iter_range = range(int(iterations))
+
+        # Optional tqdm progress bar
+        _pbar = None
+        if self.config.show_progress:
+            try:
+                from tqdm import tqdm
+                iter_range = tqdm(iter_range, desc="T-LARS", unit="iter", leave=True)
+                _pbar = iter_range
+            except ImportError:
+                logger.warning("tqdm not installed — progress bar disabled. Install with: pip install tqdm")
+
+        for t in iter_range:
             n_iter = t + 1
             n_active = len(active_columns)
 
@@ -444,6 +483,9 @@ class TLARS(MultilinearModel):
             nr = float(self.ops.to_scalar(self.ops.norm(r)))
             norm_r.append(nr)
 
+            if _pbar is not None:
+                _pbar.set_postfix({"||r||": f"{nr:.4g}", "active": n_active}, refresh=False)
+
             # Stopping criteria
             if nr < tolerance or n_active >= active_coefficients:
                 if debug_mode:
@@ -474,6 +516,8 @@ class TLARS(MultilinearModel):
                 active_factor_column_indices[n] = sorted(set(active_factor_column_indices[n]) | {int(col_indices[n])})
 
         # Store results
+        if _pbar is not None:
+            _pbar.close()
         self.tensor_norm_ = tensor_norm
         coef_tensor_result = self.tp.tensorize(x=coef_, tensor_shape=core_tensor_shape, active_elements=active_columns)
         self.coef_tensor_ = coef_tensor_result
@@ -507,7 +551,7 @@ class TLARS(MultilinearModel):
             The predicted tensor.
         """
         if self.coef_tensor_ is None:
-            raise ValueError("Model is not fitted yet. Call 'fit' before 'predict'.")
+            raise NotFittedError("Model is not fitted yet. Call 'fit' before 'predict'.")
         normalized_matrices = []
         for D in X:
             D_normed = self.normalize_input(D)

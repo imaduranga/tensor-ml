@@ -15,6 +15,7 @@ from typing import Any, Union
 import numpy as np
 
 from tensor_ml.enums import BackendType
+from tensor_ml.exceptions import BackendError
 
 __all__ = ["TensorOps", "NumpyOps", "TorchOps", "TensorOpsFactory"]
 
@@ -395,7 +396,7 @@ class TensorOpsFactory:
         ops_class = cls._registry.get(backend)
         if ops_class is None:
             if backend == BackendType.TORCH:
-                raise ImportError(
+                raise BackendError(
                     "PyTorch is required for the TORCH backend but is not installed. "
                     "Install it with: pip install torch"
                 )
