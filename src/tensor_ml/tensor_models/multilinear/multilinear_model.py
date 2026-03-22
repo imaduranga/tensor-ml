@@ -18,7 +18,7 @@ class MultilinearModel(BaseTensorModel):
     Base class for multilinear tensor models. Inherit from this class for specific multilinear algorithms
     (e.g., TLARS, TNET, Kronecker OMP, etc.). Handles backend detection and input normalization.
     """
-    def __init__(self, backend: Optional[Union[str, BackendType]] = None, device: Optional[Union[str, Any]] = 'cuda'):
+    def __init__(self, backend: Optional[Union[str, BackendType]] = None, device: Optional[Union[str, Any]] = None):
         """
         Initialize the MultilinearModel.
 
@@ -26,9 +26,9 @@ class MultilinearModel(BaseTensorModel):
         ----------
         backend : Optional[Union[str, BackendType]], default=None
             Backend to use (NUMPY or TORCH). If None, will be inferred from data at fit time.
-        device : Optional[Union[str, Any]], default='cuda'
-            Device for torch tensors ('cuda', 'cpu', or torch.device). Defaults to 'cuda'.
-            If not available, will use 'cpu'. Ignored for non-torch backends.
+        device : Optional[Union[str, Any]], default=None
+            Device for torch tensors ('cuda', 'cpu', or torch.device). Defaults to None
+            (auto-detected by TorchOps: CUDA if available, else CPU). Ignored for non-torch backends.
         """
         super().__init__()
         self._device_hint = device

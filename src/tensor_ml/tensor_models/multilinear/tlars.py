@@ -1,14 +1,44 @@
-"""Tensor Least Angle Regression and Selection (T-LARS) algorithm."""
+"""Tensor Least Angle Regression and Selection (T-LARS) algorithm.
 
-from typing import Optional, Union, Any
+Provides the :class:`TLARS` sparse tensor regression model and its
+associated :class:`TLARSConfig` parameter schema.
+"""
+
+from typing import Optional, Union, Any, Dict
 import logging
 import numpy as np
+from pydantic import BaseModel, Field, field_validator
 from tensor_ml.tensor_models.multilinear.multilinear_model import MultilinearModel
 from tensor_ml.enums import BackendType
 
-__all__ = ["TLARS"]
+__all__ = ["TLARS", "TLARSConfig"]
 
 logger = logging.getLogger(__name__)
+
+
+class TLARSConfig(BaseModel):
+    """Validated configuration for the TLARS algorithm.
+
+    All numeric fields are validated to be positive.  ``mask_type`` must be
+    one of ``'KP'`` (Kronecker Product) or ``'KR'`` (Khatri-Rao).
+    """
+
+    tolerance: float = Field(0.075, gt=0, description="Residual norm stopping threshold.")
+    l0_mode: bool = Field(default=False, description="If True, use greedy L0 selection (no column removal).")
+    mask_type: str = Field(default='KP', description="Column selection type: 'KP' or 'KR'.")
+    debug_mode: bool = Field(default=False, description="If True, emit per-iteration DEBUG-level log messages.")
+    active_coefficients: int = Field(int(1e6), gt=0, description="Maximum number of active (non-zero) coefficients.")
+    iterations: int = Field(int(1e6), gt=0, description="Maximum number of LARS iterations.")
+    precision_factor: int = Field(5, gt=0, description="Multiplier for machine epsilon used as numerical precision.")
+    backend: Optional[Union[str, BackendType]] = Field(default=None, description="Backend to use ('numpy', 'torch', etc.). Inferred from data if None.")
+    device: Optional[str] = Field(default=None, description="Device hint for the backend (e.g., 'cpu', 'cuda').")
+
+    @field_validator('mask_type')
+    @classmethod
+    def check_mask_type(cls, v: str) -> str:
+        if v not in ('KP', 'KR'):
+            raise ValueError("mask_type must be 'KP' or 'KR'")
+        return v
 
 
 class TLARS(MultilinearModel):
@@ -18,56 +48,132 @@ class TLARS(MultilinearModel):
     from a Kronecker-structured dictionary via the LARS/LASSO path.
     Supports both L0 (greedy) and L1 (LASSO) modes.
 
+    Parameters are validated via :class:`TLARSConfig` (Pydantic) and
+    accessible through ``self.config``.
+
     Parameters
     ----------
     tolerance : float, default=0.075
         Residual norm stopping threshold.
     l0_mode : bool, default=False
         If ``True``, use greedy L0 selection (no column removal).
-        If ``False``, use L1 (LASSO) with column add/remove.
     mask_type : str, default='KP'
-        Column selection type: ``'KP'`` (Kronecker Product) or ``'KR'``
-        (Khatri-Rao, restricts to diagonal Kronecker columns).
+        ``'KP'`` (Kronecker Product) or ``'KR'`` (Khatri-Rao).
     debug_mode : bool, default=False
-        When ``True``, emit per-iteration ``DEBUG``-level log messages
-        via the ``tensor_ml.tensor_models.multilinear.tlars`` logger.
+        Emit per-iteration DEBUG-level log messages.
     active_coefficients : int, default=1_000_000
         Maximum number of active (non-zero) coefficients.
     iterations : int, default=1_000_000
         Maximum number of LARS iterations.
     precision_factor : int, default=5
-        Multiplier for machine epsilon used as numerical precision.
-    backend : str | BackendType, optional
-        Backend to use. Inferred from data if ``None``.
-    device : str | torch.device, optional
-        Device hint for the PyTorch backend.
+        Multiplier for machine epsilon.
+    backend : str or BackendType, optional
+        Backend to use.  Inferred from data if ``None``.
+    device : str, optional
+        Device hint (e.g. ``'cpu'``, ``'cuda'``).
+
+    Attributes
+    ----------
+    config : TLARSConfig
+        Validated parameter configuration.
+    coef_tensor_ : array-like or None
+        Coefficient tensor after fitting.
+    active_columns_ : array-like or None
+        Indices of active dictionary columns after fitting.
+    coef_ : array-like or None
+        Coefficient vector for active columns.
+    norm_r_ : list[float] or None
+        Residual norm history across iterations.
+    n_iter_ : int
+        Number of iterations run.
     """
 
-    def __init__(
-        self,
-        tolerance: float = 0.075,
-        l0_mode: bool = False,
-        mask_type: str = 'KP',
-        debug_mode: bool = False,
-        active_coefficients: int = int(1e6),
-        iterations: int = int(1e6),
-        precision_factor: int = 5,
-        backend: Optional[Union[str, BackendType]] = None,
-        device: Optional[str] = None,
-    ) -> None:
-        super().__init__(backend=backend, device=device)
-        self.tolerance = tolerance
-        self.l0_mode = l0_mode
-        self.mask_type = mask_type
-        self.debug_mode = debug_mode
-        self.active_coefficients = active_coefficients
-        self.iterations = iterations
-        self.precision_factor = precision_factor
-        self.coef_tensor_ = None  # Solution tensor
+    def __init__(self, **kwargs: Any) -> None:
+        config = TLARSConfig(**kwargs)
+        super().__init__(backend=config.backend, device=config.device)
+        self.config = config
+        self.coef_tensor_ = None
         self.active_columns_ = None
-        self.coef_ = None  # Solution vector
+        self.coef_ = None
         self.norm_r_ = None
-        self.precision = self.precision_factor * np.finfo(float).eps
+        self.n_iter_ = 0
+        self.tensor_norm_ = None
+        self.precision = self.config.precision_factor * np.finfo(float).eps
+
+    # ------------------------------------------------------------------
+    # Parameter introspection (scikit-learn-style)
+    # ------------------------------------------------------------------
+
+    def get_params(self, deep: bool = True) -> Dict[str, Any]:
+        """Get parameters for this estimator.
+
+        Parameters
+        ----------
+        deep : bool, default=True
+            If True, return parameters for contained sub-objects.
+
+        Returns
+        -------
+        params : dict
+            Parameter names mapped to their values.
+        """
+        return self.config.model_dump()
+
+    def set_params(self, **params: Any) -> 'TLARS':
+        """Set the parameters of this estimator.
+
+        Parameters
+        ----------
+        **params
+            Estimator parameters.
+
+        Returns
+        -------
+        self : TLARS
+        """
+        self.config = self.config.model_copy(update=params)
+        if 'backend' in params:
+            self.backend = self.config.backend
+        if 'device' in params:
+            self._device_hint = self.config.device
+        self.precision = self.config.precision_factor * np.finfo(float).eps
+        return self
+
+    # ------------------------------------------------------------------
+    # Backend / device management
+    # ------------------------------------------------------------------
+
+    def to(self, backend: Optional[str] = None, device: Optional[str] = None) -> 'TLARS':
+        """Move the model to a different backend or device.
+
+        Parameters
+        ----------
+        backend : str, optional
+            Backend name (e.g. ``'numpy'``, ``'torch'``).
+        device : str, optional
+            Device hint (e.g. ``'cpu'``, ``'cuda'``).
+
+        Returns
+        -------
+        self : TLARS
+            The model instance (for chaining).
+        """
+        if backend is not None:
+            self.config = self.config.model_copy(update={'backend': backend})
+            if isinstance(backend, BackendType):
+                self.backend = backend
+            else:
+                self.backend = BackendType(str(backend).lower())
+            self._setup_ops()
+        if device is not None:
+            self.config = self.config.model_copy(update={'device': device})
+            self._device_hint = device
+            self._setup_ops()
+        return self
+
+    # ------------------------------------------------------------------
+    # Fit / predict
+    # ------------------------------------------------------------------
 
     def fit(
         self,
@@ -75,12 +181,11 @@ class TLARS(MultilinearModel):
         Y: Any,
         coef_tensor: Any = None,
     ) -> 'TLARS':
-        """
-        Fits the TLARS model to the provided tensor data.
+        """Fit the TLARS model to tensor data.
 
         Parameters
         ----------
-        factor_matrices : List
+        factor_matrices : list
             List of factor (dictionary) matrices for each tensor mode.
         Y : array-like
             Target tensor to approximate.
@@ -92,6 +197,20 @@ class TLARS(MultilinearModel):
         self : TLARS
             Returns the fitted model instance.
         """
+        if not isinstance(factor_matrices, list) or len(factor_matrices) == 0:
+            raise ValueError("factor_matrices must be a non-empty list of matrices")
+        if Y is None:
+            raise ValueError("Y (target tensor) must not be None")
+
+        # Unpack config for readability
+        tolerance = self.config.tolerance
+        l0_mode = self.config.l0_mode
+        mask_type = self.config.mask_type
+        debug_mode = self.config.debug_mode
+        active_coefficients = self.config.active_coefficients
+        iterations = self.config.iterations
+        precision_factor = self.config.precision_factor
+
         # Resolve backend from data if not set explicitly
         self._resolve_backend(Y)
 
@@ -111,7 +230,7 @@ class TLARS(MultilinearModel):
         gramians = []
 
         # Precision settings
-        precision = self.precision_factor * np.finfo(float).eps
+        precision = precision_factor * np.finfo(float).eps
         precision_order = round(abs(np.log10(precision)))
         is_orthogonal = True
 
@@ -137,7 +256,7 @@ class TLARS(MultilinearModel):
             "TLARS setup: backend=%s, tensor_shape=%s, core_tensor_shape=%s, "
             "total_columns=%d, orthogonal=%s, l0_mode=%s, mask_type=%s",
             self.backend, tensor_shape, core_tensor_shape,
-            total_column_count, is_orthogonal, self.l0_mode, self.mask_type,
+            total_column_count, is_orthogonal, l0_mode, mask_type,
         )
 
         # Normalize Y
@@ -154,7 +273,7 @@ class TLARS(MultilinearModel):
 
         # Mask type logic (KR/KP)
         column_mask_indices = []
-        if self.mask_type == 'KR':
+        if mask_type == 'KR':
             if all(x == core_tensor_shape[0] for x in core_tensor_shape):
                 tensor_indices = tuple(1 for _ in range(order))
                 stride = self.tp.get_vector_index(tensor_indices, core_tensor_shape)
@@ -208,11 +327,11 @@ class TLARS(MultilinearModel):
                 GInv = self.ops.pinv(GI)
 
         n_iter = 0
-        for t in range(int(self.iterations)):
+        for t in range(int(iterations)):
             n_iter = t + 1
             n_active = len(active_columns)
 
-            if self.debug_mode:
+            if debug_mode:
                 logger.debug(
                     "iter %d: n_active=%d, lambda=%.6g", n_iter, n_active, lambda_value,
                 )
@@ -285,7 +404,7 @@ class TLARS(MultilinearModel):
                 add_column_flag = True
 
             # Calculate delta_minus for L1 minimization
-            if not self.l0_mode:
+            if not l0_mode:
                 delta_minus = -coef_ / dI
                 delta_minus[delta_minus <= precision] = self.ops.inf
                 col_idx3 = self.ops.argmin(delta_minus)
@@ -301,7 +420,7 @@ class TLARS(MultilinearModel):
 
             # Check stopping conditions
             if lambda_value < delta or lambda_value < 0 or delta < 0:
-                if self.debug_mode:
+                if debug_mode:
                     logger.debug(
                         "iter %d: stopping — lambda=%.6g, delta=%.6g",
                         n_iter, lambda_value, delta,
@@ -326,9 +445,9 @@ class TLARS(MultilinearModel):
             norm_r.append(nr)
 
             # Stopping criteria
-            if nr < self.tolerance or n_active >= self.active_coefficients:
-                if self.debug_mode:
-                    reason = "tolerance" if nr < self.tolerance else "max active coefficients"
+            if nr < tolerance or n_active >= active_coefficients:
+                if debug_mode:
+                    reason = "tolerance" if nr < tolerance else "max active coefficients"
                     logger.debug(
                         "iter %d: stopping — %s (||r||=%.6g, n_active=%d)",
                         n_iter, reason, nr, n_active,
@@ -337,13 +456,13 @@ class TLARS(MultilinearModel):
 
             # Add or remove column from the active set
             if add_column_flag:
-                if self.debug_mode:
+                if debug_mode:
                     logger.debug("iter %d: adding column %d", n_iter, changed_dict_column_index)
                 active_columns = self.ops.concatenate([active_columns, self.ops.asarray([changed_dict_column_index])])
                 coef_ = self.ops.concatenate([coef_, self.ops.zeros(1)])
                 changed_active_column_index = self.ops.numel(coef_) - 1
             else:
-                if self.debug_mode:
+                if debug_mode:
                     logger.debug("iter %d: removing column %d", n_iter, changed_dict_column_index)
                 changed_active_column_index = self.ops.find_index(active_columns, changed_dict_column_index)
                 coef_ = self.ops.concatenate([coef_[:changed_active_column_index], coef_[changed_active_column_index + 1:]])
@@ -375,8 +494,7 @@ class TLARS(MultilinearModel):
         X: Any,
         **kwargs: Any,
     ) -> Any:
-        """
-        Predicts the target tensor using the learned coefficients and provided factor matrices.
+        """Predict the target tensor using the learned coefficients.
 
         Parameters
         ----------

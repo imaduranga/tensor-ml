@@ -39,13 +39,22 @@ class TorchTensorProducts(TensorProductsBase):
         self.torch = torch
         self.device = device
 
+    def _ensure_tensor(self, m):
+        """Convert *m* to a torch.Tensor on ``self.device`` if it isn't one already."""
+        torch = self.torch
+        if not isinstance(m, torch.Tensor):
+            m = torch.tensor(m)
+        if self.device is not None:
+            m = m.to(self.device)
+        return m
+
     # ── Products ───────────────────────────────────────────────────
 
     def kronecker_product(self, matrices):
         torch = self.torch
         if not matrices:
             raise ValueError("The list of matrices is empty.")
-        matrices = [torch.tensor(m) if not isinstance(m, torch.Tensor) else m for m in matrices]
+        matrices = [self._ensure_tensor(m) for m in matrices]
         reversed_matrices = matrices[::-1]
         result = reversed_matrices[0]
         for matrix in reversed_matrices[1:]:
@@ -56,7 +65,7 @@ class TorchTensorProducts(TensorProductsBase):
         torch = self.torch
         if not matrices:
             raise ValueError("The list of matrices is empty.")
-        matrices = [torch.tensor(m) if not isinstance(m, torch.Tensor) else m for m in matrices]
+        matrices = [self._ensure_tensor(m) for m in matrices]
         num_columns = matrices[0].shape[1]
         for m in matrices:
             if m.shape[1] != num_columns:
@@ -74,7 +83,7 @@ class TorchTensorProducts(TensorProductsBase):
         torch = self.torch
         if not matrices:
             raise ValueError("The list of matrices is empty.")
-        matrices = [torch.tensor(m) if not isinstance(m, torch.Tensor) else m for m in matrices]
+        matrices = [self._ensure_tensor(m) for m in matrices]
         reversed_matrices = matrices[::-1]
         result = reversed_matrices[0]
         for matrix in reversed_matrices[1:]:
@@ -85,7 +94,7 @@ class TorchTensorProducts(TensorProductsBase):
         torch = self.torch
         if not tensors:
             raise ValueError("The list of tensors is empty.")
-        tensors = [torch.tensor(t) if not isinstance(t, torch.Tensor) else t for t in tensors]
+        tensors = [self._ensure_tensor(t) for t in tensors]
         result = tensors[0].clone()
         for t in tensors[1:]:
             result = result * t
@@ -100,8 +109,8 @@ class TorchTensorProducts(TensorProductsBase):
     def full_multilinear_product(self, X, factor_matrices, use_transpose=False):
         torch = self.torch
         if not isinstance(X, torch.Tensor):
-            X = torch.tensor(X)
-        factor_matrices = [torch.tensor(m) if not isinstance(m, torch.Tensor) else m for m in factor_matrices]
+            X = self._ensure_tensor(X)
+        factor_matrices = [self._ensure_tensor(m) for m in factor_matrices]
         # Ensure all factor matrices match X's dtype
         factor_matrices = [fm.to(dtype=X.dtype) for fm in factor_matrices]
 

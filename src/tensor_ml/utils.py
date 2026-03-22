@@ -23,5 +23,8 @@ def infer_backend(data: Any, backend: Optional[BackendType] = None) -> BackendTy
         pass
     if isinstance(data, np.ndarray) or (isinstance(data, list) and len(data) > 0 and isinstance(data[0], np.ndarray)):
         return BackendType.NUMPY
-    raise ValueError("Cannot infer backend from data type.")
+    raise ValueError(
+        f"Cannot infer backend from data type {type(data).__name__!r}. "
+        "Expected np.ndarray, torch.Tensor, or a list of them."
+    )
 
