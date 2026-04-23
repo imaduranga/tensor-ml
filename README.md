@@ -134,14 +134,34 @@ tensor_ml/
 
 ## Citation
 
-If you use tensor-ml in your research, please cite:
+If you use tensor-ml in your research, please cite the underlying T-LARS algorithm:
+
+> Ishan Wickramasingha, Ahmed Elrewainy, Michael Sobhy, Sherif S. Sherif;
+> **Tensor Least Angle Regression for Sparse Representations of Multidimensional Signals.**
+> *Neural Computation* 2020; 32 (9): 1697–1732.
+> doi: [10.1162/neco_a_01304](https://doi.org/10.1162/neco_a_01304)
+
+```bibtex
+@article{wickramasingha2020tlars,
+  title   = {Tensor Least Angle Regression for Sparse Representations of Multidimensional Signals},
+  author  = {Wickramasingha, Ishan and Elrewainy, Ahmed and Sobhy, Michael and Sherif, Sherif S.},
+  journal = {Neural Computation},
+  year    = {2020},
+  volume  = {32},
+  number  = {9},
+  pages   = {1697--1732},
+  doi     = {10.1162/neco_a_01304}
+}
+```
+
+You may also cite the software itself:
 
 ```bibtex
 @software{tensor_ml,
-  title={tensor-ml: Tensor Machine Learning Library},
-  author={Ishan Wickramasingha},
-  url={https://github.com/IW276/tensor-ml},
-  license={MIT}
+  title   = {tensor-ml: Tensor Machine Learning Library},
+  author  = {Wickramasingha, Ishan},
+  url     = {https://github.com/IW276/tensor-ml},
+  license = {MIT}
 }
 ```
 

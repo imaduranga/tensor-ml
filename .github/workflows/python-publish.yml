@@ -1,22 +1,40 @@
-# This workflow will upload a Python Package to PyPI when a release is created
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+name: Publish to PyPI
 
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-name: Upload Python Package
+# Publishes automatically when a PR is merged into master.
+# Only proceeds if the version in pyproject.toml does not yet exist on PyPI,
+# so bumping the version in a PR is all that is needed to trigger a release.
 
 on:
-  release:
-    types: [published]
-
-permissions:
-  contents: read
+  push:
+    branches: [master]
 
 jobs:
-  release-build:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.check.outputs.should_publish }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check whether this version is already on PyPI
+        id: check
+        run: |
+          VERSION=$(grep '^version' pyproject.toml | head -1 | cut -d'"' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                 "https://pypi.org/pypi/tensor-ml/${VERSION}/json")
+          if [ "$HTTP" = "200" ]; then
+            echo "Version ${VERSION} already on PyPI – skipping publish."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version ${VERSION} is new – will publish."
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check-version
+    if: needs.check-version.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -29,9 +47,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Build release distributions
-        run: |
-          uv build
+      - name: Build distributions
+        run: uv build
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
@@ -39,33 +56,21 @@ jobs:
           name: release-dists
           path: dist/
 
-  pypi-publish:
+  publish:
+    needs: [check-version, build]
+    if: needs.check-version.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
-    needs:
-      - release-build
     permissions:
-      # IMPORTANT: this permission is mandatory for trusted publishing
-      id-token: write
-
-    # Dedicated environments with protections for publishing are strongly recommended.
-    # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
-    environment:
-      name: pypi
-      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
-      # url: https://pypi.org/p/YOURPROJECT
-      #
-      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
-      # ALTERNATIVE: exactly, uncomment the following line instead:
-      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+      id-token: write   # required for OIDC trusted publishing
 
     steps:
-      - name: Retrieve release distributions
+      - name: Download distributions
         uses: actions/download-artifact@v4
         with:
           name: release-dists
           path: dist/
 
-      - name: Publish release distributions to PyPI
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
