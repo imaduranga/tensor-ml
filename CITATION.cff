@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite both the software and the paper below."
+type: software
+title: "tensor-ml: Tensor Machine Learning Library"
+authors:
+  - family-names: Wickramasingha
+    given-names: Ishan
+repository-code: "https://github.com/imaduranga/tensor-ml"
+license: MIT
+version: "0.2.0"
+
+preferred-citation:
+  type: article
+  title: "Tensor Least Angle Regression for Sparse Representations of Multidimensional Signals"
+  authors:
+    - family-names: Wickramasingha
+      given-names: Ishan
+    - family-names: Elrewainy
+      given-names: Ahmed
+    - family-names: Sobhy
+      given-names: Michael
+    - family-names: Sherif
+      given-names: Sherif S.
+  journal: "Neural Computation"
+  year: 2020
+  volume: 32
+  issue: 9
+  start: 1697
+  end: 1732
+  doi: "10.1162/neco_a_01304"
