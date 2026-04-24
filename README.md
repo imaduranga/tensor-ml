@@ -2,10 +2,17 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/tensor-ml.svg)](https://pypi.org/project/tensor-ml/)
 [![Python](https://img.shields.io/pypi/pyversions/tensor-ml.svg)](https://pypi.org/project/tensor-ml/)
-[![Tests](https://github.com/IW276/tensor-ml/actions/workflows/tests.yml/badge.svg)](https://github.com/IW276/tensor-ml/actions/workflows/tests.yml)
+[![Tests](https://github.com/imaduranga/tensor-ml/actions/workflows/tests.yml/badge.svg)](https://github.com/imaduranga/tensor-ml/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A Python library for tensor analysis, multilinear algebra, tensor regression, and multidimensional sparse signal representations.
+
+Implements the **T-LARS** algorithm from:
+
+> Ishan Wickramasingha, Ahmed Elrewainy, Michael Sobhy, Sherif S. Sherif;
+> **Tensor Least Angle Regression for Sparse Representations of Multidimensional Signals.**
+> *Neural Computation* 2020; 32 (9): 1697–1732.
+> doi: [10.1162/neco_a_01304](https://doi.org/10.1162/neco_a_01304)
 
 ## Features
 
@@ -31,7 +38,7 @@ pip install "tensor-ml[torch]"
 Development install from source (using [uv](https://docs.astral.sh/uv/)):
 
 ```bash
-git clone https://github.com/IW276/tensor-ml.git
+git clone https://github.com/imaduranga/tensor-ml.git
 cd tensor-ml
 uv sync --all-extras       # creates .venv and installs all deps
 uv run pytest              # run the test suite
@@ -129,17 +136,16 @@ tensor_ml/
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Run tests (`pytest`)
-4. Submit a pull request
+3. Run the test suite (`uv run pytest`)
+4. Submit a pull request against `master`
+
+Releases are fully automated — merging a PR that bumps the version in
+`pyproject.toml` and `src/tensor_ml/__init__.py` publishes to PyPI,
+creates a git tag, and opens a version-bump PR automatically.
 
 ## Citation
 
 If you use tensor-ml in your research, please cite the underlying T-LARS algorithm:
-
-> Ishan Wickramasingha, Ahmed Elrewainy, Michael Sobhy, Sherif S. Sherif;
-> **Tensor Least Angle Regression for Sparse Representations of Multidimensional Signals.**
-> *Neural Computation* 2020; 32 (9): 1697–1732.
-> doi: [10.1162/neco_a_01304](https://doi.org/10.1162/neco_a_01304)
 
 ```bibtex
 @article{wickramasingha2020tlars,
@@ -160,7 +166,7 @@ You may also cite the software itself:
 @software{tensor_ml,
   title   = {tensor-ml: Tensor Machine Learning Library},
   author  = {Wickramasingha, Ishan},
-  url     = {https://github.com/IW276/tensor-ml},
+  url     = {https://github.com/imaduranga/tensor-ml},
   license = {MIT}
 }
 ```

@@ -33,10 +33,10 @@ torch = ["torch>=1.9.0"]
 progress = ["tqdm>=4.60.0"]
 
 [project.urls]
-Homepage = "https://github.com/IW276/tensor-ml"
-Repository = "https://github.com/IW276/tensor-ml"
-Issues = "https://github.com/IW276/tensor-ml/issues"
-Changelog = "https://github.com/IW276/tensor-ml/blob/master/CHANGELOG.md"
+Homepage = "https://github.com/imaduranga/tensor-ml"
+Repository = "https://github.com/imaduranga/tensor-ml"
+Issues = "https://github.com/imaduranga/tensor-ml/issues"
+Changelog = "https://github.com/imaduranga/tensor-ml/blob/master/CHANGELOG.md"
 
 [dependency-groups]
 dev = [

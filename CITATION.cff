@@ -5,7 +5,7 @@ title: "tensor-ml: Tensor Machine Learning Library"
 authors:
   - family-names: Wickramasingha
     given-names: Ishan
-repository-code: "https://github.com/IW276/tensor-ml"
+repository-code: "https://github.com/imaduranga/tensor-ml"
 license: MIT
 version: "0.2.0"
 
