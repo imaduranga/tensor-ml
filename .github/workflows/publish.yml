@@ -1,27 +1,50 @@
 name: Publish to PyPI
 
-# Publishes automatically when a PR is merged into master.
-# Only proceeds if the version in pyproject.toml does not yet exist on PyPI,
-# so bumping the version in a PR is all that is needed to trigger a release.
+# Fires on every push to master (i.e. every merged PR).
+# Pipeline:
+#   1. check-version  – read version from pyproject.toml; skip if already on
+#                       PyPI or if this is an automated version-bump commit
+#   2. build          – uv build → wheel + sdist
+#   3. publish        – upload to PyPI via OIDC trusted publishing
+#   4. tag-and-release – create git tag vX.Y.Z and a GitHub release with
+#                        auto-generated notes
+#   5. version-bump   – bump minor version, open a PR (merging that PR will
+#                        NOT re-trigger publishing because the commit message
+#                        is detected and skipped in check-version)
 
 on:
   push:
     branches: [master]
 
 jobs:
+
+  # ── 1. Decide whether to publish ──────────────────────────────────────────
   check-version:
     runs-on: ubuntu-latest
     outputs:
       should_publish: ${{ steps.check.outputs.should_publish }}
       version: ${{ steps.check.outputs.version }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check whether this version is already on PyPI
+      - name: Check whether this version should be published
         id: check
         run: |
+          # Skip automated version-bump commits to avoid an infinite loop:
+          # squash merge  → "chore: bump version to X.Y.Z"
+          # regular merge → "Merge pull request #N from …/chore/bump-version-X.Y.Z"
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          if echo "$COMMIT_MSG" | grep -qE "(chore: bump version|bump-version-[0-9])"; then
+            echo "Version-bump commit detected – skipping publish."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           VERSION=$(grep '^version' pyproject.toml | head -1 | cut -d'"' -f2)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
           HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
                  "https://pypi.org/pypi/tensor-ml/${VERSION}/json")
           if [ "$HTTP" = "200" ]; then
@@ -32,6 +55,7 @@ jobs:
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
           fi
 
+  # ── 2. Build wheel + sdist ─────────────────────────────────────────────────
   build:
     needs: check-version
     if: needs.check-version.outputs.should_publish == 'true'
@@ -56,12 +80,13 @@ jobs:
           name: release-dists
           path: dist/
 
+  # ── 3. Publish to PyPI ─────────────────────────────────────────────────────
   publish:
     needs: [check-version, build]
     if: needs.check-version.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     permissions:
-      id-token: write   # required for OIDC trusted publishing
+      id-token: write   # OIDC trusted publishing
 
     steps:
       - name: Download distributions
@@ -74,3 +99,72 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
+  # ── 4. Create git tag + GitHub release ────────────────────────────────────
+  tag-and-release:
+    needs: [check-version, publish]
+    if: needs.check-version.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.check-version.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create git tag
+        run: |
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+
+      - name: Create GitHub release with auto-generated notes
+        run: |
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --generate-notes \
+            --latest
+
+  # ── 5. Bump minor version and open a PR ───────────────────────────────────
+  version-bump:
+    needs: [check-version, tag-and-release]
+    if: needs.check-version.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      VERSION: ${{ needs.check-version.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bump minor version and open PR
+        run: |
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "chore/bump-version-${NEW_VERSION}"
+
+          sed -i "s/^version = \"${VERSION}\"/version = \"${NEW_VERSION}\"/" pyproject.toml
+          sed -i "s/__version__ = \"${VERSION}\"/__version__ = \"${NEW_VERSION}\"/" src/tensor_ml/__init__.py
+
+          git add pyproject.toml src/tensor_ml/__init__.py
+          git commit -m "chore: bump version to ${NEW_VERSION}"
+          git push origin "chore/bump-version-${NEW_VERSION}"
+
+          printf 'Automated minor version bump after releasing v%s to PyPI.\n\nMerging this PR will **not** trigger another publish — the version-bump commit pattern is detected and skipped by the `check-version` job.' \
+            "$VERSION" > /tmp/pr_body.txt
+
+          gh pr create \
+            --title "chore: bump version to ${NEW_VERSION}" \
+            --body-file /tmp/pr_body.txt \
+            --base master \
+            --head "chore/bump-version-${NEW_VERSION}"
