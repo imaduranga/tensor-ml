@@ -226,6 +226,54 @@ class TorchTensorProducts(TensorProductsBase):
         dI = self.tround(dI, precision_order)
         return dI, GInv
 
+    def get_direction_vector_en(self, GInv, zI, gramians, lambda2, active_columns,
+                                  add_column_flag, changed_dict_column_index,
+                                  changed_active_column_index, tensor_shape,
+                                  precision_order=10):
+        torch = self.torch
+        device = zI.device
+        N = len(active_columns)
+
+        if add_column_flag:
+            old_N = N - 1
+            indices = np.unravel_index(int(changed_dict_column_index), tensor_shape, order='F')
+            ga = self.get_kronecker_matrix_column(gramians, indices)
+            ga = ga[active_columns].to(dtype=torch.float64, device=device)
+
+            b = torch.zeros(N, dtype=torch.float64, device=device)
+            b[-1] = 1.0
+            GInv = GInv.to(dtype=torch.float64)
+            if old_N > 0:
+                b[:old_N] -= GInv[:old_N, :old_N] @ ga[:old_N]
+
+            # Elastic Net: add lambda2 to the diagonal Gramian entry
+            schur_complement = ga[N - 1] + lambda2 + (torch.dot(ga[:old_N], b[:old_N]) if old_N > 0 else 0.0)
+            alpha = 1.0 / schur_complement
+
+            new_GInv = torch.zeros((N, N), dtype=torch.float64, device=device)
+            if old_N > 0:
+                new_GInv[:old_N, :old_N] = GInv[:old_N, :old_N]
+            new_GInv += alpha * torch.outer(b, b)
+            GInv = new_GInv
+        else:
+            old_N = N + 1
+            k = int(changed_active_column_index)
+
+            alpha = GInv[k, k].clone()
+            ab = GInv[:old_N, k].clone()
+
+            keep = [i for i in range(old_N) if i != k]
+            keep_t = torch.tensor(keep, device=device)
+            GInv = GInv[keep_t][:, keep_t].clone()
+            ab = ab[keep_t].clone()
+            GInv -= (1.0 / alpha) * torch.outer(ab, ab)
+
+        # Elastic Net: scale direction vector by (1 + lambda2)
+        zI = zI.to(dtype=GInv.dtype)
+        dI = (1.0 + lambda2) * (GInv @ zI)
+        dI = self.tround(dI, precision_order)
+        return dI, GInv
+
     # ── Rounding ───────────────────────────────────────────────────
 
     def tround(self, tensor, precision_order=0):

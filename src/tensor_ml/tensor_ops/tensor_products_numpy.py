@@ -172,6 +172,48 @@ class NumpyTensorProducts(TensorProductsBase):
         dI = self.tround(dI, precision_order)
         return dI, GInv
 
+    def get_direction_vector_en(self, GInv, zI, gramians, lambda2, active_columns,
+                                  add_column_flag, changed_dict_column_index,
+                                  changed_active_column_index, tensor_shape,
+                                  precision_order=10):
+        N = len(active_columns)
+
+        if add_column_flag:
+            old_N = N - 1
+            indices = np.unravel_index(int(changed_dict_column_index), tensor_shape, order='F')
+            ga = self.get_kronecker_matrix_column(gramians, indices).astype(np.float64)
+            ga = ga[active_columns]
+
+            b = np.zeros(N, dtype=np.float64)
+            b[-1] = 1.0
+            if old_N > 0:
+                b[:old_N] -= GInv[:old_N, :old_N] @ ga[:old_N]
+
+            # Elastic Net: add lambda2 to the diagonal Gramian entry
+            schur_complement = ga[N - 1] + lambda2 + (np.dot(ga[:old_N], b[:old_N]) if old_N > 0 else 0.0)
+            alpha = 1.0 / schur_complement
+
+            new_GInv = np.zeros((N, N), dtype=np.float64)
+            if old_N > 0:
+                new_GInv[:old_N, :old_N] = GInv[:old_N, :old_N]
+            new_GInv += alpha * np.outer(b, b)
+            GInv = new_GInv
+        else:
+            old_N = N + 1
+            k = int(changed_active_column_index)
+
+            alpha = GInv[k, k]
+            ab = GInv[:old_N, k].copy()
+
+            GInv = np.delete(np.delete(GInv[:old_N, :old_N], k, axis=0), k, axis=1)
+            ab = np.delete(ab, k)
+            GInv -= (1.0 / alpha) * np.outer(ab, ab)
+
+        # Elastic Net: scale direction vector by (1 + lambda2)
+        dI = (1.0 + lambda2) * (GInv @ zI)
+        dI = self.tround(dI, precision_order)
+        return dI, GInv
+
     # ── Rounding ───────────────────────────────────────────────────
 
     def tround(self, tensor, precision_order=0):
