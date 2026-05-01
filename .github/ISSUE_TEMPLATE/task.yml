@@ -1,0 +1,30 @@
+name: TML Task
+description: Create a new task, feature, or bug fix. Branch names must match the issue number.
+title: "TML-<number>: <short description>"
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Naming convention:** Replace `<number>` with this issue's number once created (e.g. `TML-7: Add new feature`).
+        Your branch must then be named `TML-<number>/short-slug` (e.g. `TML-7/add-new-feature`).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be done and why?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: What must be true for this issue to be closed?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
