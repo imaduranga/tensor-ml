@@ -290,6 +290,58 @@ class TensorProductsBase(ABC):
         """
         ...
 
+    @abstractmethod
+    def get_direction_vector_en(
+        self,
+        GInv: Any,
+        zI: Any,
+        gramians: list[Any],
+        lambda2: float,
+        active_columns: Any,
+        add_column_flag: bool,
+        changed_dict_column_index: int,
+        changed_active_column_index: int,
+        tensor_shape: tuple[int, ...] | list[int],
+        precision_order: int = 10,
+    ) -> tuple[Any, Any]:
+        """Elastic Net variant of the Schur-complement direction-vector update.
+
+        Identical to :meth:`get_direction_vector` except that *lambda2* is
+        added to the diagonal Gramian entry during column addition, and the
+        returned direction vector is scaled by ``(1 + lambda2)``.
+
+        Parameters
+        ----------
+        GInv : array-like
+            Current inverse of the regularised Gramian.
+        zI : array-like
+            Sign vector of correlations for the active set.
+        gramians : list[array-like]
+            Per-mode Gramian matrices.
+        lambda2 : float
+            L2 regularisation coefficient.
+        active_columns : array-like
+            Linear indices of the active Kronecker columns.
+        add_column_flag : bool
+            ``True`` if a column is being added, ``False`` if removed.
+        changed_dict_column_index : int
+            Global index of the column being added/removed.
+        changed_active_column_index : int
+            Position within the active set.
+        tensor_shape : tuple[int, ...] | list[int]
+            Shape of the core tensor.
+        precision_order : int, default=10
+            Rounding precision (significant digits).
+
+        Returns
+        -------
+        dI : array-like
+            Elastic Net direction vector ``(1 + lambda2) * G_reg^{-1} zI``.
+        GInv : array-like
+            Updated inverse of the regularised Gramian.
+        """
+        ...
+
     # ── Rounding ───────────────────────────────────────────────────
 
     @abstractmethod
