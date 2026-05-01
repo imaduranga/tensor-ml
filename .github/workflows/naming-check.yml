@@ -28,20 +28,20 @@ jobs:
             exit 0
           fi
 
-          # Branch must start with TML followed by one or more digits
-          if ! echo "$BRANCH" | grep -qE '^TML[0-9]+'; then
-            echo "::error::Branch '$BRANCH' must start with 'TML<number>' (e.g. TML6/my-feature). Create a GitHub issue first, then name the branch after its number."
+          # Branch must start with TML-<number>
+          if ! echo "$BRANCH" | grep -qE '^TML-[0-9]+'; then
+            echo "::error::Branch '$BRANCH' must start with 'TML-<number>' (e.g. TML-6/my-feature). Create a GitHub issue first, then name the branch after its number."
             exit 1
           fi
 
           # Extract the issue number
-          ISSUE_NUM=$(echo "$BRANCH" | grep -oE '^TML([0-9]+)' | grep -oE '[0-9]+')
+          ISSUE_NUM=$(echo "$BRANCH" | grep -oE '^TML-([0-9]+)' | grep -oE '[0-9]+')
           echo "Issue number extracted: $ISSUE_NUM"
 
           # Verify the issue exists in this repo
           STATE=$(gh api "repos/${REPO}/issues/${ISSUE_NUM}" --jq '.state' 2>/dev/null || echo "not_found")
           if [ "$STATE" = "not_found" ]; then
-            echo "::error::Issue #${ISSUE_NUM} does not exist in ${REPO}. Create a GitHub issue titled 'TML${ISSUE_NUM}: <description>' before opening this PR."
+            echo "::error::Issue #${ISSUE_NUM} does not exist in ${REPO}. Create a GitHub issue titled 'TML-${ISSUE_NUM}: <description>' before opening this PR."
             exit 1
           fi
 
@@ -55,18 +55,18 @@ jobs:
       issues: write
 
     steps:
-      - name: Validate issue title starts with TML<number>
+      - name: Validate issue title starts with TML-<number>
         env:
           TITLE: ${{ github.event.issue.title }}
           ISSUE_NUM: ${{ github.event.issue.number }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          if echo "$TITLE" | grep -qE '^TML[0-9]+'; then
+          if echo "$TITLE" | grep -qE '^TML-[0-9]+'; then
             echo "✓ Issue title follows naming convention."
             exit 0
           fi
 
           gh issue comment "$ISSUE_NUM" --repo "$REPO" \
-            --body "⚠️ **Naming convention:** Issue titles must start with \`TML<number>:\` where the number matches the issue number (e.g. \`TML${ISSUE_NUM}: My feature description\`). Please edit the title to follow this convention before creating a branch."
-          echo "::warning::Issue #${ISSUE_NUM} title '$TITLE' does not follow the TML<number> naming convention."
+            --body "⚠️ **Naming convention:** Issue titles must start with \`TML-<number>:\` where the number matches the issue number (e.g. \`TML-${ISSUE_NUM}: My feature description\`). Please edit the title to follow this convention before creating a branch."
+          echo "::warning::Issue #${ISSUE_NUM} title '$TITLE' does not follow the TML-<number> naming convention."
