@@ -318,12 +318,122 @@ Return a readable string showing only non-default parameters, e.g. `TLARS(l0_mod
 
 ---
 
+### `TNETConfig`
+
+Pydantic model for validated T-NET configuration.
+
+`TNETConfig` extends `TLARSConfig` with `lambda2` for Elastic Net (L1 + L2) regularization.
+
+```python
+TNETConfig(
+  tolerance=0.075,
+  lambda2=0.1,
+  l0_mode=False,
+  mask_type='KP',
+  debug_mode=False,
+  active_coefficients=1_000_000,
+  iterations=1_000_000,
+  precision_factor=5,
+  backend=None,
+  device=None,
+)
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `lambda2` | `float` | `0.1` | L2 regularization coefficient (must be > 0). |
+| `tolerance` | `float` | `0.075` | Residual norm stopping threshold (must be > 0). |
+| `l0_mode` | `bool` | `False` | Greedy L0 selection (no column removal). |
+| `mask_type` | `str` | `'KP'` | `'KP'` (Kronecker Product) or `'KR'` (Khatri-Rao). |
+| `debug_mode` | `bool` | `False` | Emit per-iteration DEBUG log messages. |
+| `active_coefficients` | `int` | `1_000_000` | Maximum active (non-zero) coefficients. |
+| `iterations` | `int` | `1_000_000` | Maximum LARS iterations. |
+| `precision_factor` | `int` | `5` | Machine-epsilon multiplier. |
+| `show_progress` | `bool` | `False` | Display a `tqdm` progress bar during fitting. |
+| `backend` | `str \| BackendType \| None` | `None` | Compute backend (inferred if `None`). |
+| `device` | `str \| None` | `None` | Device hint (e.g. `'cpu'`, `'cuda'`). |
+
+---
+
+### `TNET(TLARS)`
+
+Tensor Elastic NET model for sparse tensor recovery.
+
+`TNET` extends `TLARS` by adding an L2 regularization term controlled by `lambda2` and applies Elastic Net coefficient rescaling.
+
+```python
+model = TNET(tolerance=0.075, lambda2=0.1, l0_mode=False)
+```
+
+All keyword arguments are forwarded to `TNETConfig`.
+
+#### Methods
+
+**`fit(factor_matrices, Y, coef_tensor=None)`**
+
+Fit the T-NET model.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `factor_matrices` | list[array-like] | Per-mode dictionary factor matrices. |
+| `Y` | array-like | Target tensor to approximate. |
+| `coef_tensor` | array-like, optional | Optional warm-start coefficient tensor. |
+
+Returns `self`.
+
+**`predict(X=None)`**
+
+Reconstruct the tensor from the fitted coefficients.
+
+**`score(X=None, y=None)`**
+
+R² score on the given data.
+
+**`get_params(deep=True) → dict`**
+
+Return current configuration as a dictionary.
+
+**`set_params(**params) → self`**
+
+Update configuration parameters. Validates via `TNETConfig`.
+
+**`to(backend=None, device=None) → self`**
+
+Switch the compute backend and/or device.
+
+**`cpu() → self`**
+
+Shorthand for `to(device='cpu')`.
+
+**`cuda() → self`**
+
+Shorthand for `to(backend='torch', device='cuda')`.
+
+**`__repr__() → str`**
+
+Return a readable string showing only non-default parameters, e.g. `TNET(lambda2=0.5, l0_mode=True)`.
+
+#### Fitted Attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `config` | `TNETConfig` | Validated parameter configuration. |
+| `coef_tensor_` | array-like | Sparse coefficient tensor. |
+| `active_columns_` | array-like | Indices of selected dictionary columns. |
+| `coef_` | array-like | Non-zero coefficient vector. |
+| `norm_r_` | `list[float]` | Residual norm history. |
+| `n_iter_` | `int` | Number of iterations executed. |
+| `tensor_norm_` | `float` | Norm of the input tensor (used for de-normalisation). |
+
+---
+
 ## Inheritance Hierarchy
 
 ```
 BaseTensorModel (ABC)
   └── MultilinearModel
-        └── TLARS
+    └── TLARS
+      └── TNET
 ```
 
 ```

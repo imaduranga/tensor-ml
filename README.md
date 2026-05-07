@@ -7,7 +7,9 @@
 
 A Python library for tensor analysis, multilinear algebra, tensor regression, and multidimensional sparse signal representations.
 
-Implements the **T-LARS** algorithm from:
+Implements the **T-LARS** and **T-NET** algorithms for sparse tensor recovery.
+
+T-LARS reference:
 
 > Ishan Wickramasingha, Ahmed Elrewainy, Michael Sobhy, Sherif S. Sherif;
 > **Tensor Least Angle Regression for Sparse Representations of Multidimensional Signals.**
@@ -19,6 +21,7 @@ Implements the **T-LARS** algorithm from:
 - **Backend-agnostic** — unified API for NumPy and PyTorch (auto-detects input type)
 - **Tensor products** — Kronecker, Khatri-Rao, Hadamard, full multilinear product
 - **T-LARS** — Tensor Least Angle Regression & Selection for sparse tensor recovery
+- **T-NET** — Tensor Elastic Net (L1 + L2) for robust sparse tensor recovery
 - **scikit-learn-style interface** — `fit` / `predict` / `score` / `get_params` / `set_params`
 - **Device management** — `.to('cuda')`, `.cpu()`, `.cuda()` for PyTorch backend
 - **Validated configuration** — Pydantic-based parameter validation with clear error messages
@@ -92,6 +95,29 @@ r2 = model.score([D1, D2], Y)
 print(f"R² = {r2:.4f}, iterations = {model.n_iter_}")
 ```
 
+### T-NET: Elastic Net Sparse Tensor Recovery
+
+```python
+import numpy as np
+from tensor_ml import TNET
+
+# Per-mode dictionaries
+D1 = np.random.randn(8, 16)
+D2 = np.random.randn(8, 16)
+
+# Target tensor
+Y = np.random.randn(8, 8)
+
+# Fit with Elastic Net regularisation
+model = TNET(tolerance=0.01, lambda2=0.1)
+model.fit(factor_matrices=[D1, D2], Y=Y)
+
+# Predict & score
+Y_hat = model.predict([D1, D2])
+r2 = model.score([D1, D2], Y)
+print(f"R² = {r2:.4f}, active = {len(model.active_columns_)}")
+```
+
 ### PyTorch Backend
 
 ```python
@@ -109,6 +135,7 @@ K = TensorProducts.kronecker_product([A, B])  # auto-uses TorchTensorProducts
 |----------|-------------|
 | [Quickstart Tutorial](docs/quickstart.ipynb) | Interactive notebook walkthrough |
 | [T-LARS Image Reconstruction](docs/examples/tlars_image_reconstruction.ipynb) | Visual demo with DCT dictionaries |
+| [T-NET Image Reconstruction](docs/examples/tnet_image_reconstruction.ipynb) | Elastic Net reconstruction and denoising demo |
 | [API Reference](docs/api_reference.md) | Complete class and method reference |
 | [User Guide](docs/user_guide.md) | Concepts, architecture, and extension guide |
 
@@ -129,7 +156,8 @@ tensor_ml/
     ├── base.py            # BaseTensorModel ABC
     └── multilinear/
         ├── multilinear_model.py  # MultilinearModel base
-        └── tlars.py              # TLARS algorithm + TLARSConfig
+        ├── tlars.py              # TLARS algorithm + TLARSConfig
+        └── tnet.py               # TNET algorithm + TNETConfig
 ```
 
 ## Contributing
