@@ -12,7 +12,7 @@ A comprehensive guide to the tensor-ml library — concepts, architecture, usage
 4. [Backend System](#backend-system)
 5. [Tensor Operations](#tensor-operations)
 6. [Tensor Products](#tensor-products)
-7. [T-LARS: Sparse Tensor Recovery](#t-lars-sparse-tensor-recovery)
+7. [T-LARS and T-NET: Sparse Tensor Recovery](#t-lars-and-t-net-sparse-tensor-recovery)
 8. [Device Management](#device-management)
 9. [Error Handling](#error-handling)
 10. [Logging & Debugging](#logging--debugging)
@@ -26,7 +26,8 @@ A comprehensive guide to the tensor-ml library — concepts, architecture, usage
 
 - **Element-wise tensor operations** (norm, normalize, argmax, …) via a backend-agnostic API.
 - **Tensor products** (Kronecker, Khatri-Rao, Hadamard, full multilinear) with automatic backend dispatch.
-- **T-LARS** — a Tensor Least Angle Regression and Selection algorithm for sparse tensor recovery from compressed measurements.
+- **T-LARS** — a Tensor Least Angle Regression and Selection algorithm for sparse tensor recovery.
+- **T-NET** — a Tensor Elastic Net variant of T-LARS that adds L2 regularization (`lambda2`).
 
 The library auto-detects whether inputs are NumPy arrays or PyTorch tensors and dispatches to the correct backend transparently.
 
@@ -64,7 +65,7 @@ This structure avoids explicitly forming the (potentially huge) full dictionary.
 
 ### Sparse Tensor Recovery
 
-Given compressed measurements $\mathbf{y} = \boldsymbol{\Phi} \mathbf{D} \mathbf{c}$, the goal is to recover a sparse coefficient vector $\mathbf{c}$. T-LARS does this by iteratively selecting and deselecting dictionary atoms along the LARS/LASSO regularisation path.
+Given compressed measurements $\mathbf{y} = \boldsymbol{\Phi} \mathbf{D} \mathbf{c}$, the goal is to recover a sparse coefficient vector $\mathbf{c}$. T-LARS does this by iteratively selecting and deselecting dictionary atoms along the LARS/LASSO regularisation path, while T-NET adds an L2 term for Elastic Net behavior.
 
 ### Backend Agnosticism
 
@@ -175,7 +176,7 @@ TensorProducts.get_kronecker_factor_column_indices(5, (3, 4))
 
 ---
 
-## T-LARS: Sparse Tensor Recovery
+## T-LARS and T-NET: Sparse Tensor Recovery
 
 ### Quick Example
 
@@ -208,6 +209,24 @@ print("Iterations:", model.n_iter_)
 print("Active atoms:", len(model.active_columns_))
 ```
 
+### T-NET Quick Example
+
+```python
+import numpy as np
+from tensor_ml import TNET
+
+D1 = np.random.randn(8, 16)
+D2 = np.random.randn(8, 16)
+Y = np.random.randn(8, 8)
+
+model = TNET(tolerance=0.05, lambda2=0.1, debug_mode=True)
+model.fit(factor_matrices=[D1, D2], Y=Y)
+
+print("R²:", model.score([D1, D2], Y))
+print("Iterations:", model.n_iter_)
+print("Active atoms:", len(model.active_columns_))
+```
+
 ### Configuration
 
 All parameters are validated through `TLARSConfig` (Pydantic):
@@ -229,6 +248,9 @@ from tensor_ml.tensor_models import TLARSConfig
 
 TLARSConfig(tolerance=-1)    # ValidationError: tolerance must be > 0
 TLARSConfig(mask_type='XX')  # ValidationError: must be 'KP' or 'KR'
+
+from tensor_ml import TNETConfig
+TNETConfig(lambda2=0)         # ValidationError: lambda2 must be > 0
 ```
 
 ### scikit-learn-style Interface
@@ -264,6 +286,10 @@ After calling `fit()`, the following attributes are available:
 | **Speed** | Faster (no sign checks) | Slower but more accurate |
 | **Use case** | Known high sparsity | Unknown sparsity, regularisation needed |
 
+### References
+
+- Wickramasingha, I. (2021). *Computationally Efficient Methods for Sparse Tensor Signal Processing*. University of Manitoba. https://mspace.lib.umanitoba.ca/items/2f052807-8cc2-4623-a9ee-cecbb10fd4e9
+
 ---
 
 ## Device Management
@@ -271,10 +297,15 @@ After calling `fit()`, the following attributes are available:
 ### Device Switching
 
 ```python
+from tensor_ml import TLARS, TNET
+
 model = TLARS(backend='numpy')
 model.to(backend='torch', device='cuda')  # switch to GPU
 model.cpu()   # shorthand for .to(device='cpu')
 model.cuda()  # shorthand for .to(backend='torch', device='cuda')
+
+tnet = TNET(lambda2=0.1)
+tnet.cuda()   # same API for T-NET
 ```
 
 ### PyTorch Device Placement
