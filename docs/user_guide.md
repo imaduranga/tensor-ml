@@ -286,6 +286,10 @@ After calling `fit()`, the following attributes are available:
 | **Speed** | Faster (no sign checks) | Slower but more accurate |
 | **Use case** | Known high sparsity | Unknown sparsity, regularisation needed |
 
+### References
+
+- Wickramasingha, I. (2021). *Computationally Efficient Methods for Sparse Tensor Signal Processing*. University of Manitoba. https://mspace.lib.umanitoba.ca/items/2f052807-8cc2-4623-a9ee-cecbb10fd4e9
+
 ---
 
 ## Device Management

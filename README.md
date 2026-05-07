@@ -188,6 +188,10 @@ If you use tensor-ml in your research, please cite the underlying T-LARS algorit
 }
 ```
 
+For T-NET and multilinear Elastic Net background, see:
+
+- I. Wickramasingha, *Computationally Efficient Methods for Sparse Tensor Signal Processing*, University of Manitoba, 2021. https://mspace.lib.umanitoba.ca/items/2f052807-8cc2-4623-a9ee-cecbb10fd4e9
+
 You may also cite the software itself:
 
 ```bibtex
