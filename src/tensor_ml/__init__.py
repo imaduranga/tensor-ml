@@ -20,7 +20,7 @@ from tensor_ml.tensor_ops import (
     NumpyTensorProducts,
 )
 
-from tensor_ml.tensor_models import BaseTensorModel, MultilinearModel, TLARS, TLARSConfig
+from tensor_ml.tensor_models import BaseTensorModel, MultilinearModel, TLARS, TLARSConfig, TNET, TNETConfig
 
 __all__ = [
     "__version__",
@@ -34,7 +34,7 @@ __all__ = [
     "TensorProductsBase", "TensorProducts", "TensorProductsFactory",
     "NumpyTensorProducts",
     # Models
-    "BaseTensorModel", "MultilinearModel", "TLARS", "TLARSConfig",
+    "BaseTensorModel", "MultilinearModel", "TLARS", "TLARSConfig", "TNET", "TNETConfig",
 ]
 
 try:

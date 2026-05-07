@@ -402,6 +402,60 @@ class TensorProducts:
             tensor_shape, precision_order
         )
 
+    @staticmethod
+    def get_direction_vector_en(
+        GInv: Any,
+        zI: Any,
+        gramians: list[Any],
+        lambda2: float,
+        active_columns: Any,
+        add_column_flag: bool,
+        changed_dict_column_index: int,
+        changed_active_column_index: int,
+        tensor_shape: tuple[int, ...] | list[int],
+        precision_order: int = 10,
+    ) -> tuple[Any, Any]:
+        """Elastic Net variant of the Schur-complement direction-vector update.
+
+        Adds *lambda2* to the diagonal Gramian entry during column addition and
+        scales the returned direction vector by ``(1 + lambda2)``.
+
+        Parameters
+        ----------
+        GInv : array-like
+            Current inverse of the regularised Gramian.
+        zI : array-like
+            Sign vector.
+        gramians : list[array-like]
+            Per-mode Gramian matrices.
+        lambda2 : float
+            L2 regularisation coefficient.
+        active_columns : array-like
+            Active column indices.
+        add_column_flag : bool
+            ``True`` to add, ``False`` to remove.
+        changed_dict_column_index : int
+            Global column index being changed.
+        changed_active_column_index : int
+            Position within the active set.
+        tensor_shape : tuple[int, ...] | list[int]
+            Core tensor shape.
+        precision_order : int, default=10
+            Rounding precision.
+
+        Returns
+        -------
+        dI : array-like
+            Elastic Net direction vector.
+        GInv : array-like
+            Updated inverse of the regularised Gramian.
+        """
+        return _resolve(zI).get_direction_vector_en(
+            GInv, zI, gramians, lambda2, active_columns,
+            add_column_flag, changed_dict_column_index, changed_active_column_index,
+            tensor_shape, precision_order
+        )
+
     # ── Rounding ───────────────────────────────────────────────────
 
     @staticmethod
